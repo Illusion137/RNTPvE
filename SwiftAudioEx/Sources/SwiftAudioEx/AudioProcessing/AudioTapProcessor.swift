@@ -121,7 +121,8 @@ public class AudioTapProcessor {
             process: tapProcess
         )
         
-        var tap: Unmanaged<MTAudioProcessingTap>?
+        // var tap: Unmanaged<MTAudioProcessingTap>?
+        var tap: MTAudioProcessingTap?
         let status = MTAudioProcessingTapCreate(
             kCFAllocatorDefault,
             &callbacks,
@@ -135,7 +136,7 @@ public class AudioTapProcessor {
             return nil
         }
         
-        inputParams.audioTapProcessor = audioTap.takeRetainedValue()
+        inputParams.audioTapProcessor = audioTap
         audioMix.inputParameters = [inputParams]
         
         return audioMix
