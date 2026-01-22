@@ -1,0 +1,29 @@
+name: validate
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  unit-tests:
+    runs-on: blaze/macos-14
+    strategy:
+      matrix:
+        target: [macos]
+        include:
+          - target: macos
+            destination: '-destination "platform=macOS,name=Any Mac"'
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+      - name: Run Tests
+        run: xcodebuild test -scheme SwiftAudioEx ${{ matrix.destination }} -enableCodeCoverage YES
+      - name: Upload coverage to Codecov
+        if: matrix.target == 'macos'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}

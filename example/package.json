@@ -1,0 +1,55 @@
+{
+  "name": "react-native-track-player-example",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "android": "react-native run-android",
+    "android:clean": "rm -rf android/.gradle && rm -rf android/build && rm -rf android/app/build && rm -rf android/app/.cxx",
+    "android:ide": "open -a /Applications/Android\\ Studio.app ./android",
+    "android:uninstall": "adb uninstall trackplayer.example",
+    "android:release": "cd android && ./gradlew clean && ./gradlew bundleRelease && cd app/build/outputs/bundle/release && pwd && ls",
+    "android:install-release": "RD=android/app/build/outputs/bundle/release && (rm $RD/app.apks || true) && bundletool build-apks --bundle=$RD/app-release.aab --output=$RD/app.apks && (adb uninstall com.example || true) && bundletool install-apks --apks=$RD/app.apks",
+    "android:logs": "android/scripts/logs",
+    "android:adb-reverse": "adb reverse tcp:8081 tcp:8081",
+    "ios": "react-native run-ios",
+    "ios:sim": "react-native run-ios --simulator=\"iPhone\"",
+    "ios:ide": "open ios/*.xcworkspace",
+    "start": "react-native start",
+    "lint": "eslint src --max-warnings=0",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --check src",
+    "format:fix": "prettier --write src",
+    "typecheck": "tsc --noEmit true",
+    "build:android": "react-native build-android --extra-params \"--no-daemon --console=plain -PreactNativeArchitectures=arm64-v8a\"",
+    "build:ios": "react-native build-ios --mode Debug"
+  },
+  "dependencies": {
+    "@gorhom/bottom-sheet": "^5.1.6",
+    "@react-native-community/slider": "^5.1.1",
+    "@react-native-segmented-control/segmented-control": "^2.5.7",
+    "@react-native-vector-icons/fontawesome6": "^12.0.1",
+    "react": "19.1.0",
+    "react-native": "0.80.2",
+    "react-native-gesture-handler": "^2.26.0",
+    "react-native-reanimated": "^3.18.0",
+    "react-native-safe-area-context": "^5.5.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.25.2",
+    "@babel/preset-env": "^7.25.3",
+    "@babel/runtime": "^7.25.0",
+    "@react-native-community/cli": "19.1.1",
+    "@react-native-community/cli-platform-android": "19.1.1",
+    "@react-native-community/cli-platform-ios": "19.1.1",
+    "@react-native/babel-preset": "0.80.2",
+    "@react-native/eslint-config": "0.80.2",
+    "@react-native/metro-config": "0.80.2",
+    "@react-native/typescript-config": "0.80.2",
+    "@types/react": "^19.1.0",
+    "react-native-builder-bob": "^0.40.12",
+    "react-native-monorepo-config": "^0.1.9"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
