@@ -53,12 +53,9 @@
     "example": "yarn workspace react-native-track-player-example",
     "test": "jest",
     "typecheck": "tsc",
-    "lint": "eslint src web --max-warnings=0",
     "format": "prettier --check src web",
     "format:fix": "prettier --write src web",
     "clean": "del-cli android/build example/android/build example/android/app/build example/ios/build lib",
-    "build": "yarn prepare",
-    "prepare": "bob build",
     "release": "release-it --only-version"
   },
   "keywords": [
