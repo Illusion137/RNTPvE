@@ -18,7 +18,6 @@
     "android",
     "ios",
     "cpp",
-    "web/**/*",
     "*.podspec",
     "react-native.config.js",
     "!docs/**/*",
