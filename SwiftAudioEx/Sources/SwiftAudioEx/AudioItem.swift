@@ -28,7 +28,11 @@ public protocol AudioItem {
     func getAlbumTitle() -> String?
     func getSourceType() -> SourceType
     func getArtwork(_ handler: @escaping (AudioItemImage?) -> Void)
-    
+    func getDuration() -> Double?
+}
+
+extension AudioItem {
+    public func getDuration() -> Double? { nil }
 }
 
 /// Make your `AudioItem`-subclass conform to this protocol to control which AVAudioTimePitchAlgorithm is used for each item.

@@ -170,7 +170,8 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
                 type: item.getSourceType(),
                 playWhenReady: self.playWhenReady,
                 initialTime: (item as? InitialTiming)?.getInitialTime(),
-                options: (item as? AssetOptionsProviding)?.getAssetOptions()
+                options: (item as? AssetOptionsProviding)?.getAssetOptions(),
+                duration: item.getDuration()
             )
         }
     }

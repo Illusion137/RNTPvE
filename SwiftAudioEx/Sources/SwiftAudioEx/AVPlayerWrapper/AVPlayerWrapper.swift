@@ -33,6 +33,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var item: AVPlayerItem? = nil
     fileprivate var url: URL? = nil
     fileprivate var urlOptions: [String: Any]? = nil
+    fileprivate var passedDuration: TimeInterval?
+    fileprivate var sourceType: SourceType?
+    
     fileprivate let stateQueue = DispatchQueue(
         label: "AVPlayerWrapper.stateQueue",
         attributes: .concurrent
@@ -120,6 +123,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
     
     var duration: TimeInterval {
+        if sourceType == .stream, let duration = passedDuration, !duration.isNaN {
+            return duration
+        }
         if let seconds = currentItem?.duration.seconds, !seconds.isNaN {
             return seconds
         }
@@ -242,6 +248,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             clearCurrentItem()
         }
         if let url = url {
+            // AVURLAsset supporting streaming (HLS) and progressive download.
+            // The player will automatically detect the stream type.
             let pendingAsset = AVURLAsset(url: url, options: urlOptions)
             asset = pendingAsset
             state = .loading
@@ -348,8 +356,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         type: SourceType = .stream,
         playWhenReady: Bool = false,
         initialTime: TimeInterval? = nil,
-        options: [String : Any]? = nil
+        options: [String : Any]? = nil,
+        duration: Double? = nil
     ) {
+        self.sourceType = type
+        self.passedDuration = duration
         if let itemUrl = type == .file
             ? URL(fileURLWithPath: url)
             : URL(string: url)
@@ -392,6 +403,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         
         asset.cancelLoading()
         self.asset = nil
+        self.passedDuration = nil
+        self.sourceType = nil
         
         avPlayer.replaceCurrentItem(with: nil)
     }
