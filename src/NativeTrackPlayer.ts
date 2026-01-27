@@ -23,7 +23,6 @@ export interface Spec extends TurboModule {
   getProgress(): Promise<UnsafeObject>;
   getPlaybackState(): Promise<UnsafeObject>;
   retry(): Promise<void>;
-  setCrossFade(seconds: number): Promise<void>;
   setEqualizer(bands: number[]): Promise<void>;
   getEqualizer(): Promise<number[]>;
   removeEqualizer(): Promise<void>;

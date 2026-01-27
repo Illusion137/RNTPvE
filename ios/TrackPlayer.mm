@@ -181,10 +181,6 @@ RCT_EXPORT_MODULE()
   [nativeTrackPlayer updateOptions:options resolver:resolve rejecter:reject];
 }
 
-- (void)setCrossFade:(double)seconds resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
-  [nativeTrackPlayer setCrossFadeWithSeconds:seconds resolve:resolve reject:reject];
-}
-
 - (void)setEqualizer:(nonnull NSArray *)bands resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
   [nativeTrackPlayer setEqualizerWithBands:bands resolve:resolve reject:reject];
 }

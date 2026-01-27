@@ -433,20 +433,6 @@ export async function retry() {
 }
 
 /**
- * Sets the crossfade duration in seconds. When a track is within this duration from the end,
- * the next track will start playing and crossfade with the current track.
- * Set to 0 to disable crossfade.
- * @param seconds The crossfade duration in seconds (iOS only)
- */
-export async function setCrossFade(seconds: number): Promise<void> {
-  if (Platform.OS !== 'ios') {
-    // Crossfade is iOS only
-    return;
-  }
-  return TrackPlayer.setCrossFade(seconds);
-}
-
-/**
  * Sets the equalizer bands. Each value represents gain in decibels (typically -12 to +12).
  * @param bands Array of gain values for each frequency band (iOS only)
  */
