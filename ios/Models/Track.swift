@@ -104,6 +104,10 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         }
     }
 
+    func getDuration() -> Double? {
+        return duration
+    }
+
     // MARK: - TimePitching Protocol
 
     func getPitchAlgorithmType() -> AVAudioTimePitchAlgorithm {

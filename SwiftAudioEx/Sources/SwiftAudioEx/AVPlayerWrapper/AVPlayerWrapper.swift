@@ -203,6 +203,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     func stop() {
         state = .stopped
         clearCurrentItem()
+        self.sourceType = nil
+        self.passedDuration = nil
         playWhenReady = false
     }
     
@@ -377,6 +379,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
     func unload() {
         clearCurrentItem()
+        self.sourceType = nil
+        self.passedDuration = nil
         state = .idle
     }
 
@@ -403,8 +407,6 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         
         asset.cancelLoading()
         self.asset = nil
-        self.passedDuration = nil
-        self.sourceType = nil
         
         avPlayer.replaceCurrentItem(with: nil)
     }
@@ -426,6 +428,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         playerObserver.stopObserving()
         stopObservingAVPlayerItem()
         clearCurrentItem()
+        self.sourceType = nil
+        self.passedDuration = nil
 
         avPlayer = AVPlayer();
         setupAVPlayer()

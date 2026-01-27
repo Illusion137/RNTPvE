@@ -104,9 +104,7 @@ class AVPlayerItemObserver: NSObject {
             }
             
         case AVPlayerItemKeyPath.loadedTimeRanges:
-            if let ranges = change?[.newKey] as? [NSValue], let duration = ranges.first?.timeRangeValue.duration {
-                delegate?.item(didUpdateDuration: duration.seconds)
-            }
+            break
             
         case AVPlayerItemKeyPath.playbackLikelyToKeepUp:
             if let playbackLikelyToKeepUp = change?[.newKey] as? Bool {
