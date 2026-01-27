@@ -456,7 +456,9 @@ export async function getEqualizer(): Promise<number[]> {
   }
   const result = await TrackPlayer.getEqualizer();
   // Equalizer is always active, so always returns bands (default is [0,0,0,0,0])
-  return Array.isArray(result) && result.length > 0 ? (result as number[]) : [0, 0, 0, 0, 0];
+  return Array.isArray(result) && result.length > 0
+    ? (result as number[])
+    : [0, 0, 0, 0, 0];
 }
 
 /**

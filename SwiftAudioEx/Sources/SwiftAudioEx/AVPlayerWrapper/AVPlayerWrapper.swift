@@ -120,10 +120,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
     
     var duration: TimeInterval {
-        if let seconds = currentItem?.asset.duration.seconds, !seconds.isNaN {
+        if let seconds = currentItem?.duration.seconds, !seconds.isNaN {
             return seconds
         }
-        else if let seconds = currentItem?.duration.seconds, !seconds.isNaN {
+        else if let seconds = currentItem?.asset.duration.seconds, !seconds.isNaN {
             return seconds
         }
         else if let seconds = currentItem?.seekableTimeRanges.last?.timeRangeValue.duration.seconds,
@@ -453,10 +453,7 @@ extension AVPlayerWrapper: AVPlayerObserverDelegate {
                 // Playback may have become paused externally for example due to a bluetooth device disconnecting:
                 if (self.playWhenReady) {
                     // Only if we are not on the boundaries of the track, otherwise itemDidPlayToEndTime will handle it instead.
-                    if (self.currentTime > 0 && self.currentTime < self.duration) {
-                        self.playWhenReady = false;
-                    }
-                } else {
+                    self.playWhenReady = false;                } else {
                     self.state = .paused
                 }
             }

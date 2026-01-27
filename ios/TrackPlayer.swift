@@ -242,14 +242,11 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         }
 
         // activate the audio session when there is an item to be played
-        // and the player has been configured to start when it is ready loading:
-        if (player.playWhenReady) {
-            try? audioSessionController.activateSession()
-            if #available(iOS 11.0, *) {
-                try? AVAudioSession.sharedInstance().setCategory(sessionCategory, mode: sessionCategoryMode, policy: sessionCategoryPolicy, options: sessionCategoryOptions)
-            } else {
-                try? AVAudioSession.sharedInstance().setCategory(sessionCategory, mode: sessionCategoryMode, options: sessionCategoryOptions)
-            }
+        try? audioSessionController.activateSession()
+        if #available(iOS 11.0, *) {
+            try? AVAudioSession.sharedInstance().setCategory(sessionCategory, mode: sessionCategoryMode, policy: sessionCategoryPolicy, options: sessionCategoryOptions)
+        } else {
+            try? AVAudioSession.sharedInstance().setCategory(sessionCategory, mode: sessionCategoryMode, options: sessionCategoryOptions)
         }
     }
 
