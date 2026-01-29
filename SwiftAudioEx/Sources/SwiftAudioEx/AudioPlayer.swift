@@ -305,10 +305,11 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
     }
 
     func AVWrapper(secondsElapsed seconds: Double) {
-        if let item = currentItem, item.getSourceType() == .stream, duration > 0, seconds >= duration {
-            AVWrapperItemDidPlayToEndTime()
-            return
-        }
+        // TODO investigate this, maybe don't need it???
+        // if let item = currentItem, item.getSourceType() == .stream, duration > 0, seconds >= duration {
+        //     AVWrapperItemDidPlayToEndTime()
+        //     return
+        // }
         event.secondElapse.emit(data: seconds)
     }
 
