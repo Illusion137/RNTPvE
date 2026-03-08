@@ -30,6 +30,12 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     var album: String?
     var artwork: MPMediaItemArtwork?
 
+    // SABR streaming params (YouTube server-adaptive bitrate)
+    var sabrServerUrl: String?
+    var sabrUstreamerConfig: String?
+    var sabrFormats: [[String: Any]]?
+    var poToken: String?
+
     private var originalObject: [String: Any] = [:]
 
     init?(dictionary: [String: Any]) {
@@ -38,6 +44,10 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         self.headers = dictionary["headers"] as? [String: Any]
         self.userAgent = dictionary["userAgent"] as? String
         self.pitchAlgorithm = dictionary["pitchAlgorithm"] as? String
+        self.sabrServerUrl = dictionary["sabrServerUrl"] as? String
+        self.sabrUstreamerConfig = dictionary["sabrUstreamerConfig"] as? String
+        self.sabrFormats = dictionary["sabrFormats"] as? [[String: Any]]
+        self.poToken = dictionary["poToken"] as? String
 
         updateMetadata(dictionary: dictionary);
     }
@@ -138,6 +148,13 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
                 // https://developer.apple.com/documentation/avfoundation/avurlassethttpuseragentkey
                 options[AVURLAssetHTTPUserAgentKey] = userAgent
             }
+        }
+        // SABR params — only included when the track URL uses the sabr:// scheme
+        if let sabrServerUrl = sabrServerUrl {
+            options["sabrServerUrl"] = sabrServerUrl
+            options["sabrUstreamerConfig"] = sabrUstreamerConfig ?? ""
+            options["sabrFormats"] = sabrFormats ?? []
+            options["poToken"] = poToken ?? ""
         }
         return options
     }

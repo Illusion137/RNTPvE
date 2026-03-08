@@ -497,3 +497,17 @@ export async function validateOnStartCommandIntent(): Promise<boolean> {
   if (!isAndroid) return true;
   return TrackPlayer.validateOnStartCommandIntent();
 }
+
+/**
+ * Downloads a YouTube SABR audio stream to a local file.
+ * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken)
+ * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
+ * @returns The output path on success
+ */
+export async function downloadSabr(
+  params: Record<string, unknown>,
+  outputPath: string
+): Promise<string> {
+  return TrackPlayer.downloadSabr(params, outputPath);
+}

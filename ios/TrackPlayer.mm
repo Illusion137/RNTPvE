@@ -193,6 +193,10 @@ RCT_EXPORT_MODULE()
   [nativeTrackPlayer removeEqualizerWithResolve:resolve reject:reject];
 }
 
+- (void)downloadSabr:(nonnull NSDictionary *)params outputPath:(nonnull NSString *)outputPath resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
+  [nativeTrackPlayer downloadSabrWithParams:params outputPath:outputPath resolve:resolve reject:reject];
+}
+
 // event listeners
 - (void)sendEvent:(NSString *)name body:(id)body {
   [super sendEventWithName:name body:body];

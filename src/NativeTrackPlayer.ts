@@ -99,6 +99,9 @@ export interface Spec extends TurboModule {
     PITCH_ALGORITHM_VOICE: number;
   };
 
+  // SABR download
+  downloadSabr(params: UnsafeObject, outputPath: string): Promise<string>;
+
   // android methods
   acquireWakeLock(): Promise<void>;
   abandonWakeLock(): Promise<void>;

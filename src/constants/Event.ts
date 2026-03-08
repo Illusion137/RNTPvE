@@ -136,4 +136,9 @@ export enum Event {
    * typical controllers are media notification and Android Auto.
    **/
   AndroidConnectorDisconnected = 'android-controller-disconnected',
+  /**
+   * Fired during a SABR audio download with progress updates.
+   * Payload: { outputPath: string, progress: number } (progress is 0.0–1.0)
+   **/
+  SabrDownloadProgress = 'sabr-download-progress',
 }

@@ -33,6 +33,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var item: AVPlayerItem? = nil
     fileprivate var url: URL? = nil
     fileprivate var urlOptions: [String: Any]? = nil
+    private var sabrAudioPlayer: SabrAudioPlayer? = nil
     fileprivate var passedDuration: TimeInterval?
     fileprivate var sourceType: SourceType?
     
@@ -250,6 +251,12 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             clearCurrentItem()
         }
         if let url = url {
+            // SABR streaming (YouTube server-adaptive bitrate)
+            if url.scheme?.lowercased() == "sabr" {
+                loadSABR()
+                return
+            }
+
             // AVURLAsset supporting streaming (HLS) and progressive download.
             // The player will automatically detect the stream type.
             let pendingAsset = AVURLAsset(url: url, options: urlOptions)
@@ -399,15 +406,70 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
     }
     
+    // MARK: - SABR
+
+    private func loadSABR() {
+        guard let options = urlOptions,
+              let serverUrl = options["sabrServerUrl"] as? String,
+              let ustreamerConfig = options["sabrUstreamerConfig"] as? String else {
+            playbackFailed(error: AudioPlayerError.PlaybackError.failedToLoadKeyValue)
+            return
+        }
+
+        let formatsData = options["sabrFormats"] as? [[String: Any]] ?? []
+        let formats = formatsData.compactMap { SabrFormat(dictionary: $0) }
+        let poToken = options["poToken"] as? String
+
+        let config = SabrStreamConfig(
+            server_abr_streaming_url: serverUrl,
+            video_playback_ustreamer_config: ustreamerConfig,
+            po_token: poToken,
+            formats: formats
+        )
+
+        let stream = SabrStream(config: config)
+        let player = SabrAudioPlayer(stream: stream)
+        sabrAudioPlayer = player
+
+        let pendingAsset = AVURLAsset(url: SabrAudioPlayer.assetURL)
+        pendingAsset.resourceLoader.setDelegate(player, queue: DispatchQueue.main)
+        asset = pendingAsset
+        state = .loading
+
+        let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        player.start(options: playbackOptions)
+
+        // Create item directly — the resource loader handles all asset loading
+        let playerItem = AVPlayerItem(asset: pendingAsset)
+        playerItem.preferredForwardBufferDuration = bufferDuration
+        self.item = playerItem
+
+        if audioProcessingEnabled {
+            applyAudioTap(to: playerItem, asset: pendingAsset)
+        }
+
+        avPlayer.replaceCurrentItem(with: playerItem)
+        startObservingAVPlayer(item: playerItem)
+        applyAVPlayerRate()
+
+        if let initialTime = timeToSeekToAfterLoading {
+            timeToSeekToAfterLoading = nil
+            seek(to: initialTime)
+        }
+    }
+
     // MARK: - Util
 
     private func clearCurrentItem() {
+        sabrAudioPlayer?.cancel()
+        sabrAudioPlayer = nil
+
         guard let asset = asset else { return }
         stopObservingAVPlayerItem()
-        
+
         asset.cancelLoading()
         self.asset = nil
-        
+
         avPlayer.replaceCurrentItem(with: nil)
     }
     

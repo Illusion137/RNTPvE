@@ -841,6 +841,50 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         player.removeEqualizer()
         resolve(NSNull())
     }
+
+    // MARK: - SABR Download
+
+    @objc
+    public func downloadSabr(
+        params: NSDictionary,
+        outputPath: String,
+        resolve: @escaping RCTPromiseResolveBlock,
+        reject: @escaping RCTPromiseRejectBlock
+    ) {
+        guard let serverUrl = params["sabrServerUrl"] as? String,
+              let ustreamerConfig = params["sabrUstreamerConfig"] as? String else {
+            reject("E_SABR_PARAMS", "Missing required SABR params (sabrServerUrl, sabrUstreamerConfig)", nil)
+            return
+        }
+
+        let formatsData = params["sabrFormats"] as? [[String: Any]] ?? []
+        let formats = formatsData.compactMap { SabrFormat(dictionary: $0) }
+        let poToken = params["poToken"] as? String
+
+        let config = SabrStreamConfig(
+            server_abr_streaming_url: serverUrl,
+            video_playback_ustreamer_config: ustreamerConfig,
+            po_token: poToken,
+            formats: formats
+        )
+
+        let outputURL = URL(fileURLWithPath: outputPath)
+        let downloader = SabrDownloader(config: config)
+
+        Task {
+            do {
+                _ = try await downloader.download(to: outputURL) { [weak self] fraction in
+                    self?.emit(event: .SabrDownloadProgress, body: [
+                        "outputPath": outputPath,
+                        "progress": fraction
+                    ])
+                }
+                resolve(outputPath)
+            } catch {
+                reject("E_SABR_DOWNLOAD", error.localizedDescription, error)
+            }
+        }
+    }
 }
 
 
