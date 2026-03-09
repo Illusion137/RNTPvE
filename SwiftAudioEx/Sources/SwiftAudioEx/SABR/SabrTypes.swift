@@ -68,7 +68,8 @@ public struct SabrFormat {
 public struct SabrStreamConfig {
     public var server_abr_streaming_url: String? = nil
     public var video_playback_ustreamer_config: String? = nil
-    public var client_info: VideoStreaming_StreamerContext.ClientInfo? = nil
+    /// Internal — `VideoStreaming_StreamerContext.ClientInfo` is not a public type.
+    var client_info: VideoStreaming_StreamerContext.ClientInfo? = nil
     public var po_token: String? = nil
     public var duration_ms: Double? = nil
     public var formats: [SabrFormat]? = nil
@@ -79,7 +80,6 @@ public struct SabrStreamConfig {
     public init(
         server_abr_streaming_url: String? = nil,
         video_playback_ustreamer_config: String? = nil,
-        client_info: VideoStreaming_StreamerContext.ClientInfo? = nil,
         po_token: String? = nil,
         duration_ms: Double? = nil,
         formats: [SabrFormat]? = nil,
@@ -87,7 +87,6 @@ public struct SabrStreamConfig {
     ) {
         self.server_abr_streaming_url = server_abr_streaming_url
         self.video_playback_ustreamer_config = video_playback_ustreamer_config
-        self.client_info = client_info
         self.po_token = po_token
         self.duration_ms = duration_ms
         self.formats = formats

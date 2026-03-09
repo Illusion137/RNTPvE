@@ -48,7 +48,7 @@ struct MediaHeader {
     var start_range: String?
 
     static let decoder = ProtobufDecoder<MediaHeader> { data in
-        let proto = try VideoStreaming_MediaHeader(serializedData: data)
+        let proto = try VideoStreaming_MediaHeader(serializedBytes: data)
         return MediaHeader(proto: proto)
     }
 
@@ -79,7 +79,7 @@ struct FormatInitializationMetadata {
     var end_range: String?
 
     static let decoder = ProtobufDecoder<FormatInitializationMetadata> { data in
-        let proto = try VideoStreaming_FormatInitializationMetadata(serializedData: data)
+        let proto = try VideoStreaming_FormatInitializationMetadata(serializedBytes: data)
         return FormatInitializationMetadata(proto: proto)
     }
 
@@ -105,7 +105,7 @@ struct NextRequestPolicy {
     var playback_cookie: VideoStreaming_PlaybackCookie?
 
     static let decoder = ProtobufDecoder<NextRequestPolicy> { data in
-        let proto = try VideoStreaming_NextRequestPolicy(serializedData: data)
+        let proto = try VideoStreaming_NextRequestPolicy(serializedBytes: data)
         return NextRequestPolicy(proto: proto)
     }
 
@@ -121,7 +121,7 @@ struct StreamProtectionStatus {
     var status: Int?
 
     static let decoder = ProtobufDecoder<StreamProtectionStatus> { data in
-        let proto = try VideoStreaming_StreamProtectionStatus(serializedData: data)
+        let proto = try VideoStreaming_StreamProtectionStatus(serializedBytes: data)
         return StreamProtectionStatus(proto: proto)
     }
 
@@ -144,7 +144,7 @@ struct SabrContextUpdate {
     }
 
     static let decoder = ProtobufDecoder<SabrContextUpdate> { data in
-        let proto = try VideoStreaming_SabrContextUpdate(serializedData: data)
+        let proto = try VideoStreaming_SabrContextUpdate(serializedBytes: data)
         return SabrContextUpdate(proto: proto)
     }
 
@@ -166,7 +166,7 @@ struct SabrContextSendingPolicy {
     var discard_policy: [Int]
 
     static let decoder = ProtobufDecoder<SabrContextSendingPolicy> { data in
-        let proto = try VideoStreaming_SabrContextSendingPolicy(serializedData: data)
+        let proto = try VideoStreaming_SabrContextSendingPolicy(serializedBytes: data)
         return SabrContextSendingPolicy(proto: proto)
     }
 
@@ -183,7 +183,7 @@ struct SabrRedirect {
     var url: String?
 
     static let decoder = ProtobufDecoder<SabrRedirect> { data in
-        let proto = try VideoStreaming_SabrRedirect(serializedData: data)
+        let proto = try VideoStreaming_SabrRedirect(serializedBytes: data)
         return SabrRedirect(proto: proto)
     }
 
@@ -199,7 +199,7 @@ struct SabrError {
     var type: String?
 
     static let decoder = ProtobufDecoder<SabrError> { data in
-        let proto = try VideoStreaming_SabrError(serializedData: data)
+        let proto = try VideoStreaming_SabrError(serializedBytes: data)
         return SabrError(proto: proto)
     }
 
@@ -218,7 +218,7 @@ struct ReloadPlaybackContext {
     var reload_playback_params: ReloadParams?
 
     static let decoder = ProtobufDecoder<ReloadPlaybackContext> { data in
-        let proto = try VideoStreaming_ReloadPlaybackContext(serializedData: data)
+        let proto = try VideoStreaming_ReloadPlaybackContext(serializedBytes: data)
         return ReloadPlaybackContext(proto: proto)
     }
 
