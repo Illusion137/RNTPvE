@@ -223,13 +223,6 @@ export declare function getRepeatMode(): Promise<RepeatMode>;
  */
 export declare function retry(): Promise<void>;
 /**
- * Sets the crossfade duration in seconds. When a track is within this duration from the end,
- * the next track will start playing and crossfade with the current track.
- * Set to 0 to disable crossfade.
- * @param seconds The crossfade duration in seconds (iOS only)
- */
-export declare function setCrossFade(seconds: number): Promise<void>;
-/**
  * Sets the equalizer bands. Each value represents gain in decibels (typically -12 to +12).
  * @param bands Array of gain values for each frequency band (iOS only)
  */
@@ -258,4 +251,12 @@ export declare function abandonWakeLock(): Promise<void>;
  * if musicservice is restarted or not.
  */
 export declare function validateOnStartCommandIntent(): Promise<boolean>;
+/**
+ * Downloads a YouTube SABR audio stream to a local file.
+ * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken)
+ * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
+ * @returns The output path on success
+ */
+export declare function downloadSabr(params: Record<string, unknown>, outputPath: string): Promise<string>;
 //# sourceMappingURL=trackPlayer.d.ts.map

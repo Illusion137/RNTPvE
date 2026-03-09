@@ -134,6 +134,11 @@ export declare enum Event {
      * Fired when an android connector connects to MusicService.
      * typical controllers are media notification and Android Auto.
      **/
-    AndroidConnectorDisconnected = "android-controller-disconnected"
+    AndroidConnectorDisconnected = "android-controller-disconnected",
+    /**
+     * Fired during a SABR audio download with progress updates.
+     * Payload: { outputPath: string, progress: number } (progress is 0.0–1.0)
+     **/
+    SabrDownloadProgress = "sabr-download-progress"
 }
 //# sourceMappingURL=Event.d.ts.map

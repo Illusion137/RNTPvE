@@ -19,7 +19,6 @@ export interface Spec extends TurboModule {
     getProgress(): Promise<UnsafeObject>;
     getPlaybackState(): Promise<UnsafeObject>;
     retry(): Promise<void>;
-    setCrossFade(seconds: number): Promise<void>;
     setEqualizer(bands: number[]): Promise<void>;
     getEqualizer(): Promise<number[]>;
     removeEqualizer(): Promise<void>;
@@ -74,6 +73,7 @@ export interface Spec extends TurboModule {
         PITCH_ALGORITHM_MUSIC: number;
         PITCH_ALGORITHM_VOICE: number;
     };
+    downloadSabr(params: UnsafeObject, outputPath: string): Promise<string>;
     acquireWakeLock(): Promise<void>;
     abandonWakeLock(): Promise<void>;
     validateOnStartCommandIntent(): Promise<boolean>;

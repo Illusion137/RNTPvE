@@ -48,6 +48,10 @@ export type EventPayloadByEvent = {
     [Event.MetadataCommonReceived]: AudioCommonMetadataReceivedEvent;
     [Event.AndroidConnectorConnected]: AndroidControllerConnectedEvent;
     [Event.AndroidConnectorDisconnected]: AndroidControllerDisconnectedEvent;
+    [Event.SabrDownloadProgress]: {
+        outputPath: string;
+        progress: number;
+    };
 };
 type Simplify<T> = {
     [KeyType in keyof T]: T[KeyType];
