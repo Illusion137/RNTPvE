@@ -13,6 +13,16 @@ export interface Track extends TrackMetadataBase {
   pitchAlgorithm?: PitchAlgorithm;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   headers?: { [key: string]: any };
+  /** (iOS only) Activate YouTube SABR (server-adaptive bitrate) mode. */
+  isSabr?: boolean;
+  /** (iOS only) SABR server endpoint URL. */
+  sabrServerUrl?: string;
+  /** (iOS only) Base64-encoded ustreamer config from the YouTube player response. */
+  sabrUstreamerConfig?: string;
+  /** (iOS only) Audio format descriptors from the YouTube player response. */
+  sabrFormats?: Record<string, unknown>[];
+  /** (iOS only) PoToken for SABR stream authentication. */
+  poToken?: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   [key: string]: any;
 }
