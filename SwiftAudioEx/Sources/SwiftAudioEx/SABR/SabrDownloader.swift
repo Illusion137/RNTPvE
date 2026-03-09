@@ -4,13 +4,13 @@ import Foundation
 ///
 /// The output is a fragmented MP4 (fMP4) file containing the audio track.
 /// This format is directly playable by iOS/macOS without any remuxing.
-class SabrDownloader {
-    typealias ProgressCallback = (Double) -> Void  // 0.0 – 1.0
+public class SabrDownloader {
+    public typealias ProgressCallback = (Double) -> Void  // 0.0 – 1.0
 
     private let sabrStream: SabrStream
     private var downloadTask: Task<URL, Error>?
 
-    init(config: SabrStreamConfig) {
+    public init(config: SabrStreamConfig) {
         sabrStream = SabrStream(config: config)
     }
 
@@ -19,7 +19,7 @@ class SabrDownloader {
     ///   - outputPath: Destination file URL (should use .mp4 or .m4a extension)
     ///   - progress:   Called periodically with fraction complete (0.0 to 1.0)
     /// - Returns: The output URL on success
-    func download(to outputPath: URL, progress: @escaping ProgressCallback) async throws -> URL {
+    public func download(to outputPath: URL, progress: @escaping ProgressCallback) async throws -> URL {
         let options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
         let (_, audio_stream, selected) = try await sabrStream.start(options: options)
 
@@ -48,7 +48,7 @@ class SabrDownloader {
         return outputPath
     }
 
-    func abort() {
+    public func abort() {
         sabrStream.abort()
     }
 }

@@ -2,33 +2,33 @@ import Foundation
 
 // MARK: - FetchFunction
 
-typealias FetchFunction = (URLRequest) async throws -> (Data, URLResponse)
+public typealias FetchFunction = (URLRequest) async throws -> (Data, URLResponse)
 
 // MARK: - SabrFormat
 
 /// A YouTube SABR format descriptor, combining proto FormatId fields with extra metadata.
-struct SabrFormat {
-    var itag: Int32 = 0
-    var last_modified: String = ""
-    var xtags: String? = nil
-    var width: Int? = nil
-    var height: Int? = nil
-    var content_length: String? = nil
-    var audio_track_id: String? = nil
-    var mime_type: String? = nil
-    var is_drc: Bool? = nil
-    var quality: String? = nil
-    var quality_label: String? = nil
-    var average_bitrate: Int? = nil
-    var bitrate: Int = 0
-    var audio_quality: String? = nil
-    var approx_duration_ms: Int = 0
-    var language: String? = nil
-    var is_dubbed: Bool? = nil
-    var is_auto_dubbed: Bool? = nil
-    var is_descriptive: Bool? = nil
-    var is_secondary: Bool? = nil
-    var is_original: Bool? = nil
+public struct SabrFormat {
+    public var itag: Int32 = 0
+    public var last_modified: String = ""
+    public var xtags: String? = nil
+    public var width: Int? = nil
+    public var height: Int? = nil
+    public var content_length: String? = nil
+    public var audio_track_id: String? = nil
+    public var mime_type: String? = nil
+    public var is_drc: Bool? = nil
+    public var quality: String? = nil
+    public var quality_label: String? = nil
+    public var average_bitrate: Int? = nil
+    public var bitrate: Int = 0
+    public var audio_quality: String? = nil
+    public var approx_duration_ms: Int = 0
+    public var language: String? = nil
+    public var is_dubbed: Bool? = nil
+    public var is_auto_dubbed: Bool? = nil
+    public var is_descriptive: Bool? = nil
+    public var is_secondary: Bool? = nil
+    public var is_original: Bool? = nil
 
     /// Convert to Misc_FormatId proto for use in ABR request proto.
     var format_id: Misc_FormatId {
@@ -40,9 +40,9 @@ struct SabrFormat {
     }
 
     /// Initialize from a dictionary (from JS bridge).
-    init() {}
+    public init() {}
 
-    init?(dictionary: [String: Any]) {
+    public init?(dictionary: [String: Any]) {
         guard let itag = dictionary["itag"] as? Int else { return nil }
         self.itag = Int32(itag)
         self.last_modified = dictionary["lastModified"] as? String ?? ""
@@ -65,18 +65,18 @@ struct SabrFormat {
 
 // MARK: - SabrStreamConfig
 
-struct SabrStreamConfig {
-    var server_abr_streaming_url: String? = nil
-    var video_playback_ustreamer_config: String? = nil
-    var client_info: VideoStreaming_StreamerContext.ClientInfo? = nil
-    var po_token: String? = nil
-    var duration_ms: Double? = nil
-    var formats: [SabrFormat]? = nil
-    var fetch: FetchFunction? = nil
+public struct SabrStreamConfig {
+    public var server_abr_streaming_url: String? = nil
+    public var video_playback_ustreamer_config: String? = nil
+    public var client_info: VideoStreaming_StreamerContext.ClientInfo? = nil
+    public var po_token: String? = nil
+    public var duration_ms: Double? = nil
+    public var formats: [SabrFormat]? = nil
+    public var fetch: FetchFunction? = nil
 
-    init() {}
+    public init() {}
 
-    init(
+    public init(
         server_abr_streaming_url: String? = nil,
         video_playback_ustreamer_config: String? = nil,
         client_info: VideoStreaming_StreamerContext.ClientInfo? = nil,
