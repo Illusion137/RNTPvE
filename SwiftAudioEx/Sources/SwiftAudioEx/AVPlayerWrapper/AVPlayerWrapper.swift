@@ -252,7 +252,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
         if let url = url {
             // SABR streaming (YouTube server-adaptive bitrate)
-            if url.scheme?.lowercased() == "sabr" {
+            if urlOptions?["isSabr"] as? Bool == true {
                 loadSABR()
                 return
             }

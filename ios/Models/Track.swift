@@ -31,6 +31,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     var artwork: MPMediaItemArtwork?
 
     // SABR streaming params (YouTube server-adaptive bitrate)
+    var isSabr: Bool?
     var sabrServerUrl: String?
     var sabrUstreamerConfig: String?
     var sabrFormats: [[String: Any]]?
@@ -44,6 +45,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         self.headers = dictionary["headers"] as? [String: Any]
         self.userAgent = dictionary["userAgent"] as? String
         self.pitchAlgorithm = dictionary["pitchAlgorithm"] as? String
+        self.isSabr = dictionary["isSabr"] as? Bool
         self.sabrServerUrl = dictionary["sabrServerUrl"] as? String
         self.sabrUstreamerConfig = dictionary["sabrUstreamerConfig"] as? String
         self.sabrFormats = dictionary["sabrFormats"] as? [[String: Any]]
@@ -149,8 +151,9 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
                 options[AVURLAssetHTTPUserAgentKey] = userAgent
             }
         }
-        // SABR params — only included when the track URL uses the sabr:// scheme
-        if let sabrServerUrl = sabrServerUrl {
+        // SABR params — only included when isSabr is true
+        if isSabr == true, let sabrServerUrl = sabrServerUrl {
+            options["isSabr"] = true
             options["sabrServerUrl"] = sabrServerUrl
             options["sabrUstreamerConfig"] = sabrUstreamerConfig ?? ""
             options["sabrFormats"] = sabrFormats ?? []

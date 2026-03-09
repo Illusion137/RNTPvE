@@ -31,12 +31,8 @@ struct MediaURL {
             value = RCTConvert.nsurl(url)
         } else {
             let url = object as! String
-            let lower = url.lowercased()
-            isLocal = lower.hasPrefix("file://")
-            // sabr:// is a virtual scheme handled by AVAssetResourceLoader, treat as stream
-            value = lower.hasPrefix("sabr://")
-                ? URL(string: url)!
-                : RCTConvert.nsurl(url)
+            isLocal = url.lowercased().hasPrefix("file://")
+            value = RCTConvert.nsurl(url)
         }
     }
 }
