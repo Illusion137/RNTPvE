@@ -484,10 +484,6 @@ class SabrStream {
             throw SabrStreamError.no_valid_parts
         }
 
-        if (stream_protection_status?.status ?? 0) >= 2 && !processed_parts.contains(UMPPartId.MEDIA) {
-            throw SabrStreamError.no_media_parts
-        }
-
         if processed_parts.contains(UMPPartId.MEDIA_HEADER) &&
             ((initialized_video_format?.last_media_headers.isEmpty == false && initialized_audio_format?.last_media_headers.isEmpty == false) ||
              (abr_state.enabled_track_types_bitfield != 0 && main_format?.last_media_headers.isEmpty == false)) {
@@ -841,7 +837,10 @@ class SabrStream {
         let error_message = "Player response reload requested by server"
         logger.debug(tag: tag, message: "\(error_message) (token: \(reload_playback_context.reload_playback_params?.token as Any))")
         on_reload_player_response_listeners.forEach { $0(reload_playback_context) }
-        error_handler(error: NSError(domain: "SabrStream", code: -2, userInfo: [NSLocalizedDescriptionKey: error_message]), notify_controllers: false)
+        // Terminate the stream — we cannot reload the player from the native side.
+        // Setting _aborted stops the streaming loop on its next iteration check.
+        error_handler(error: NSError(domain: "SabrStream", code: -2, userInfo: [NSLocalizedDescriptionKey: error_message]), notify_controllers: true)
+        _aborted = true
     }
 
     private func handle_media_header(part: Part) {
@@ -978,7 +977,7 @@ class SabrStream {
                 logger.warn(tag: tag, message: "Incomplete stream for format \(format_id_key): downloaded \(total_duration)ms (\(duration_coverage)%), expected \(expected_duration)ms")
             }
 
-            var segments = Array(initialized_format.downloaded_segments).sorted { $0.key < $1.key }
+            let segments = Array(initialized_format.downloaded_segments).sorted { $0.key < $1.key }
             if segments.isEmpty { continue }
 
             let expected_segment_count = Int(initialized_format.format_initialization_metadata.end_segment_number ?? "0") ?? 0
