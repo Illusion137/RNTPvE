@@ -85,8 +85,8 @@ public struct SabrStreamConfig {
         duration_ms: Double? = nil,
         formats: [SabrFormat]? = nil,
         fetch: FetchFunction? = nil,
-        client_name: Int32 = 1,
-        client_version: String = "",
+        client_name: Int32? = nil,
+        client_version: String? = nil,
         cookie: String? = nil
     ) {
         self.server_abr_streaming_url = server_abr_streaming_url
@@ -96,10 +96,12 @@ public struct SabrStreamConfig {
         self.formats = formats
         self.fetch = fetch
         self.cookie = cookie
-        var ci = VideoStreaming_StreamerContext.ClientInfo()
-        ci.clientName = client_name
-        ci.clientVersion = client_version
-        self.client_info = ci
+        if let cn = client_name {
+            var ci = VideoStreaming_StreamerContext.ClientInfo()
+            ci.clientName = cn
+            ci.clientVersion = client_version ?? ""
+            self.client_info = ci
+        }
     }
 }
 

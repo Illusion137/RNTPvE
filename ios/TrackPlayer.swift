@@ -862,8 +862,8 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let poToken = params["poToken"] as? String
         let cookie = params["cookie"] as? String
         let clientInfoVal = params["clientInfo"] as? [String: Any]
-        let clientName = clientInfoVal?["clientName"] as? Int32 ?? 1
-        let clientVersion = clientInfoVal?["clientVersion"] as? String ?? ""
+        let clientName: Int32? = (clientInfoVal?["clientName"] as? NSNumber).map { Int32($0.intValue) }
+        let clientVersion: String? = clientInfoVal?["clientVersion"] as? String
 
         let config = SabrStreamConfig(
             server_abr_streaming_url: serverUrl,
