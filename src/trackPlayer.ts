@@ -498,16 +498,32 @@ export async function validateOnStartCommandIntent(): Promise<boolean> {
   return TrackPlayer.validateOnStartCommandIntent();
 }
 
+export interface SabrClientInfo {
+  clientName?: number;
+  clientVersion?: string;
+}
+
+/** Params passed to the native SABR downloader. Functions are excluded (not bridge-serializable). */
+export interface SabrDownloadParams {
+  sabrServerUrl: string;
+  sabrUstreamerConfig: string;
+  sabrFormats?: Record<string, unknown>[];
+  poToken?: string;
+  placeholder_po_token?: string;
+  clientInfo?: SabrClientInfo;
+  cookie?: string;
+}
+
 /**
  * Downloads a YouTube SABR audio stream to a local file.
  * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
- * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken)
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie)
  * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
  * @returns The output path on success
  */
 export async function downloadSabr(
-  params: Record<string, unknown>,
+  params: SabrDownloadParams,
   outputPath: string
 ): Promise<string> {
-  return TrackPlayer.downloadSabr(params, outputPath);
+  return TrackPlayer.downloadSabr(params as SabrDownloadParams, outputPath);
 }

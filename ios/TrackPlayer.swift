@@ -860,15 +860,27 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let formatsData = params["sabrFormats"] as? [[String: Any]] ?? []
         let formats = formatsData.compactMap { SabrFormat(dictionary: $0) }
         let poToken = params["poToken"] as? String
+        let cookie = params["cookie"] as? String
+        let clientInfoVal = params["clientInfo"] as? [String: Any]
+        let clientName = clientInfoVal?["clientName"] as? Int32 ?? 1
+        let clientVersion = clientInfoVal?["clientVersion"] as? String ?? ""
 
         let config = SabrStreamConfig(
             server_abr_streaming_url: serverUrl,
             video_playback_ustreamer_config: ustreamerConfig,
             po_token: poToken,
-            formats: formats
+            formats: formats,
+            client_name: clientName,
+            client_version: clientVersion,
+            cookie: cookie
         )
 
-        let outputURL = URL(fileURLWithPath: outputPath)
+        let outputURL: URL
+        if let url = URL(string: outputPath), url.isFileURL {
+            outputURL = url
+        } else {
+            outputURL = URL(fileURLWithPath: outputPath)
+        }
         let downloader = SabrDownloader(config: config)
 
         Task {

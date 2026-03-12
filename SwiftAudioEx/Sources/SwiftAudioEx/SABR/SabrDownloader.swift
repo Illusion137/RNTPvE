@@ -25,6 +25,10 @@ public class SabrDownloader {
 
         let totalMs = Double(selected.audio_format.approx_duration_ms)
 
+        try FileManager.default.createDirectory(
+            at: outputPath.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         FileManager.default.createFile(atPath: outputPath.path, contents: nil)
         let fileHandle = try FileHandle(forWritingTo: outputPath)
 

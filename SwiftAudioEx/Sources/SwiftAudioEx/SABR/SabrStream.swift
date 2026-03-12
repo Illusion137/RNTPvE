@@ -80,6 +80,7 @@ class SabrStream {
     private var video_playback_ustreamer_config: String?
     private var client_info: ClientInfo?
     private var po_token: String?
+    private var cookie: String?
 
     private var next_request_policy: NextRequestPolicy?
     private var stream_protection_status: StreamProtectionStatus?
@@ -109,6 +110,7 @@ class SabrStream {
         self.video_playback_ustreamer_config = config.video_playback_ustreamer_config
         self.client_info = config.client_info
         self.po_token = config.po_token
+        self.cookie = config.cookie
         self.duration_ms = config.duration_ms ?? .infinity
         self.format_ids = config.formats ?? []
 
@@ -634,6 +636,7 @@ class SabrStream {
         request.setValue("application/x-protobuf", forHTTPHeaderField: "content-type")
         request.setValue("identity", forHTTPHeaderField: "accept-encoding")
         request.setValue("application/vnd.yt-ump", forHTTPHeaderField: "accept")
+        if let cookie = cookie { request.setValue(cookie, forHTTPHeaderField: "Cookie") }
         request.httpBody = body
         request.timeoutInterval = 60
 
