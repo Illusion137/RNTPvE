@@ -141,4 +141,10 @@ export enum Event {
    * Payload: { outputPath: string, progress: number } (progress is 0.0–1.0)
    **/
   SabrDownloadProgress = 'sabr-download-progress',
+  /**
+   * Fired when the SABR server requests a player response reload.
+   * Payload: { outputPath: string, token: string | null }
+   * Call `updateSabrStream` with new URL/config after fetching a fresh player response.
+   **/
+  SabrReloadPlayerResponse = 'sabr-reload-player-response',
 }

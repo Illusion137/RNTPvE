@@ -844,6 +844,8 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
 
     // MARK: - SABR Download
 
+    private var sabrDownloaders: [String: SabrDownloader] = [:]
+
     @objc
     public func downloadSabr(
         params: NSDictionary,
@@ -864,11 +866,13 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let clientInfoVal = params["clientInfo"] as? [String: Any]
         let clientName: Int32? = (clientInfoVal?["clientName"] as? NSNumber).map { Int32($0.intValue) }
         let clientVersion: String? = clientInfoVal?["clientVersion"] as? String
+        let durationMs: Double? = (params["duration"] as? Double).map { $0 * 1000 }
 
         let config = SabrStreamConfig(
             server_abr_streaming_url: serverUrl,
             video_playback_ustreamer_config: ustreamerConfig,
             po_token: poToken,
+            duration_ms: durationMs,
             formats: formats,
             client_name: clientName,
             client_version: clientVersion,
@@ -882,6 +886,15 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             outputURL = URL(fileURLWithPath: outputPath)
         }
         let downloader = SabrDownloader(config: config)
+        sabrDownloaders[outputPath] = downloader
+
+        downloader.onReloadPlayerResponse = { [weak self] token in
+            guard let self = self else { return }
+            self.emit(event: .SabrReloadPlayerResponse, body: [
+                "outputPath": outputPath,
+                "token": token as Any
+            ])
+        }
 
         Task {
             do {
@@ -891,11 +904,29 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
                         "progress": fraction
                     ])
                 }
+                self.sabrDownloaders.removeValue(forKey: outputPath)
                 resolve(outputPath)
             } catch {
+                self.sabrDownloaders.removeValue(forKey: outputPath)
                 reject("E_SABR_DOWNLOAD", error.localizedDescription, error)
             }
         }
+    }
+
+    @objc(updateSabrStream:serverUrl:ustreamerConfig:resolver:rejecter:)
+    public func updateSabrStream(
+        outputPath: String,
+        serverUrl: String,
+        ustreamerConfig: String,
+        resolve: RCTPromiseResolveBlock,
+        reject: RCTPromiseRejectBlock
+    ) {
+        guard let downloader = sabrDownloaders[outputPath] else {
+            reject("E_SABR_NOT_FOUND", "No active SABR download for outputPath: \(outputPath)", nil)
+            return
+        }
+        downloader.updateStream(serverUrl: serverUrl, ustreamerConfig: ustreamerConfig)
+        resolve(NSNull())
     }
 }
 

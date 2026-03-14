@@ -232,6 +232,46 @@ All available overrides can be found by looking at `RemoteCommandController`.
 
 Make your `AudioItem`-subclass conform to `InitialTiming` to be able to start playback from a certain time.
 
+## Testing
+
+### Unit & Mock Tests
+
+Run all SABR tests (no network required):
+
+```bash
+cd SwiftAudioEx
+swift test --filter Sabr
+```
+
+This covers:
+- `SabrFormatParsingTests` — format dictionary parsing and field mapping
+- `SabrProtoWrapperTests` — protobuf serialization of `StreamerContext` and `FormatInitializationMetadata`
+- `SabrStreamMockTests` — full streaming pipeline using a mock HTTP layer (verifies `sabrContexts` propagation, `onReloadPlayerResponse` callback, and first-request `selectedFormatIds` shape)
+
+### Live Integration Tests
+
+The live tests call a configurable shell command that fetches real SABR parameters from YouTube and prints them as JSON. The command is supplied via `SABR_FETCH_CMD`.
+
+**Prerequisites** — install dependencies in `lib-origin` (one-time):
+```bash
+cd /Users/illusion/dev/Illusi/lib-origin && yarn install
+```
+
+**Run from the repo root:**
+```bash
+SABR_FETCH_CMD="npx ts-node ../tests/sabr-integration/fetch-params.ts jNQXAC9IVRw" \
+  swift test --filter SabrLiveTests
+```
+
+`fetch-params.ts` delegates to `lib-origin/tools/sabr-fetch-params.ts`, which calls `YouTubeDL.resolve_sabr_url` — the same code path the app uses. It generates a real PO token, deciphers the streaming URL, and outputs JSON consumed by the Swift tests.
+
+The live tests cover:
+- `testAudioDownload` — downloads audio, asserts file > 4 KB and progress reaches 1.0
+- `testRequestBodyStructure` — verifies the first SABR request body contains `preferredAudioFormatIds` and a non-empty `videoPlaybackUstreamerConfig`
+- `testSabrContextsPropagatedToNextRequest` — verifies `selectedFormatIds` is populated in the second request
+
+To use a different video, replace `jNQXAC9IVRw` with any YouTube video ID.
+
 ## Author
 
 Originally: Jørgen Henrichsen now extended by David Chavez and other contributors.

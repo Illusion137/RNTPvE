@@ -197,6 +197,10 @@ RCT_EXPORT_MODULE()
   [nativeTrackPlayer downloadSabrWithParams:params outputPath:outputPath resolve:resolve reject:reject];
 }
 
+- (void)updateSabrStream:(nonnull NSString *)outputPath serverUrl:(nonnull NSString *)serverUrl ustreamerConfig:(nonnull NSString *)ustreamerConfig resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
+  [nativeTrackPlayer updateSabrStream:outputPath serverUrl:serverUrl ustreamerConfig:ustreamerConfig resolver:resolve rejecter:reject];
+}
+
 // event listeners
 - (void)sendEvent:(NSString *)name body:(id)body {
   [super sendEventWithName:name body:body];

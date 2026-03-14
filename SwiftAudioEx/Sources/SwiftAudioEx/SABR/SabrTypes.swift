@@ -60,6 +60,11 @@ public struct SabrFormat {
         self.audio_quality = dictionary["audioQuality"] as? String
         self.approx_duration_ms = dictionary["approxDurationMs"] as? Int ?? 0
         self.language = dictionary["language"] as? String
+        self.is_dubbed = dictionary["isDubbed"] as? Bool
+        self.is_auto_dubbed = dictionary["isAutoDubbed"] as? Bool
+        self.is_descriptive = dictionary["isDescriptive"] as? Bool
+        self.is_secondary = dictionary["isSecondary"] as? Bool
+        self.is_original = dictionary["isOriginal"] as? Bool
     }
 }
 

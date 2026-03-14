@@ -101,6 +101,7 @@ export interface Spec extends TurboModule {
 
   // SABR download
   downloadSabr(params: UnsafeObject, outputPath: string): Promise<string>;
+  updateSabrStream(outputPath: string, serverUrl: string, ustreamerConfig: string): Promise<void>;
 
   // android methods
   acquireWakeLock(): Promise<void>;

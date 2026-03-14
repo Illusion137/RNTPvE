@@ -512,12 +512,14 @@ export interface SabrDownloadParams {
   placeholder_po_token?: string;
   clientInfo?: SabrClientInfo;
   cookie?: string;
+  /** Video duration in seconds. Converted to duration_ms on the native side. */
+  duration?: number;
 }
 
 /**
  * Downloads a YouTube SABR audio stream to a local file.
  * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
- * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie)
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie, duration)
  * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
  * @returns The output path on success
  */
@@ -526,4 +528,19 @@ export async function downloadSabr(
   outputPath: string
 ): Promise<string> {
   return TrackPlayer.downloadSabr(params as SabrDownloadParams, outputPath);
+}
+
+/**
+ * Updates the streaming URL and ustreamer config of an active SABR download.
+ * Call this from your `Event.SabrReloadPlayerResponse` handler after fetching a fresh player response.
+ * @param outputPath     The output path of the active download (used as the key)
+ * @param serverUrl      The new SABR server URL
+ * @param ustreamerConfig  The new ustreamer config (base64)
+ */
+export async function updateSabrStream(
+  outputPath: string,
+  serverUrl: string,
+  ustreamerConfig: string
+): Promise<void> {
+  return TrackPlayer.updateSabrStream(outputPath, serverUrl, ustreamerConfig);
 }

@@ -10,8 +10,17 @@ public class SabrDownloader {
     private let sabrStream: SabrStream
     private var downloadTask: Task<URL, Error>?
 
+    /// Called when the server requests a player response reload. Provides the reload token (may be nil).
+    public var onReloadPlayerResponse: ((String?) -> Void)?
+
     public init(config: SabrStreamConfig) {
         sabrStream = SabrStream(config: config)
+    }
+
+    /// Updates the streaming URL and ustreamer config on the active stream (e.g. after a reload).
+    public func updateStream(serverUrl: String, ustreamerConfig: String) {
+        sabrStream.set_streaming_url(url: serverUrl)
+        sabrStream.set_ustreamer_config(config: ustreamerConfig)
     }
 
     /// Downloads the SABR audio stream to the given output path.
@@ -20,6 +29,9 @@ public class SabrDownloader {
     ///   - progress:   Called periodically with fraction complete (0.0 to 1.0)
     /// - Returns: The output URL on success
     public func download(to outputPath: URL, progress: @escaping ProgressCallback) async throws -> URL {
+        sabrStream.on_reload_player_response { [weak self] ctx in
+            self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
+        }
         let options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
         let (_, audio_stream, selected) = try await sabrStream.start(options: options)
 

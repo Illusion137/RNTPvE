@@ -609,7 +609,7 @@ extension AVPlayerWrapper {
         } else {
             // For streaming content, tracks might load later
             // Load tracks asynchronously
-            if #available(iOS 15.0, *) {
+            if #available(iOS 15.0, macOS 12.0, *) {
                 Task {
                     do {
                         let loadedTracks = try await asset.loadTracks(withMediaType: .audio)

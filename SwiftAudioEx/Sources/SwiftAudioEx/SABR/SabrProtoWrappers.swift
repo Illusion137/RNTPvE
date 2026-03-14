@@ -89,12 +89,8 @@ struct FormatInitializationMetadata {
         self.format_id = proto.hasFormatID ? proto.formatID : nil
         self.end_segment_number = proto.hasEndSegmentNumber ? String(proto.endSegmentNumber) : nil
         self.mime_type = proto.hasMimeType ? proto.mimeType : nil
-        // duration_units and duration_timescale are not standard proto fields;
-        // they may appear in extended protos or be computed elsewhere.
-        // If proto has endTimeMs we can approximate duration_ms but
-        // for now leave these nil (code handles nil gracefully).
-        self.duration_units = nil
-        self.duration_timescale = nil
+        self.duration_units = proto.hasDurationUnits ? String(proto.durationUnits) : nil
+        self.duration_timescale = proto.hasDurationTimescale ? String(proto.durationTimescale) : nil
     }
 }
 
@@ -312,7 +308,13 @@ struct StreamerContext {
         if let pt = po_token { sc.poToken = pt }
         if let pc = playback_cookie { sc.playbackCookie = pc }
         if let ci = client_info { sc.clientInfo = ci }
-        // sabr_contexts not mapped for now (complex structure)
+        sc.sabrContexts = sabr_contexts.compactMap { ctx -> VideoStreaming_StreamerContext.SabrContext? in
+            guard let t = ctx.type, let v = ctx.value else { return nil }
+            var sabrCtx = VideoStreaming_StreamerContext.SabrContext()
+            sabrCtx.type = Int32(t)
+            sabrCtx.value = v
+            return sabrCtx
+        }
         sc.unsentSabrContexts = unsent_sabr_contexts.map { Int32($0) }
         return sc
     }
