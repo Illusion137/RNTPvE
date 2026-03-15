@@ -52,6 +52,10 @@ export type EventPayloadByEvent = {
         outputPath: string;
         progress: number;
     };
+    [Event.SabrReloadPlayerResponse]: {
+        outputPath: string;
+        token: string | null;
+    };
 };
 type Simplify<T> = {
     [KeyType in keyof T]: T[KeyType];

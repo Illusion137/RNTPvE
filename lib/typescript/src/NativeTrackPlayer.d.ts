@@ -74,6 +74,7 @@ export interface Spec extends TurboModule {
         PITCH_ALGORITHM_VOICE: number;
     };
     downloadSabr(params: UnsafeObject, outputPath: string): Promise<string>;
+    updateSabrStream(outputPath: string, serverUrl: string, ustreamerConfig: string): Promise<void>;
     acquireWakeLock(): Promise<void>;
     abandonWakeLock(): Promise<void>;
     validateOnStartCommandIntent(): Promise<boolean>;

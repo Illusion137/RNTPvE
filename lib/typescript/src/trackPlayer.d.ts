@@ -251,12 +251,36 @@ export declare function abandonWakeLock(): Promise<void>;
  * if musicservice is restarted or not.
  */
 export declare function validateOnStartCommandIntent(): Promise<boolean>;
+export interface SabrClientInfo {
+    clientName?: number;
+    clientVersion?: string;
+}
+/** Params passed to the native SABR downloader. Functions are excluded (not bridge-serializable). */
+export interface SabrDownloadParams {
+    sabrServerUrl: string;
+    sabrUstreamerConfig: string;
+    sabrFormats?: Record<string, unknown>[];
+    poToken?: string;
+    placeholder_po_token?: string;
+    clientInfo?: SabrClientInfo;
+    cookie?: string;
+    /** Video duration in seconds. Converted to duration_ms on the native side. */
+    duration?: number;
+}
 /**
  * Downloads a YouTube SABR audio stream to a local file.
  * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
- * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken)
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie, duration)
  * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
  * @returns The output path on success
  */
-export declare function downloadSabr(params: Record<string, unknown>, outputPath: string): Promise<string>;
+export declare function downloadSabr(params: SabrDownloadParams, outputPath: string): Promise<string>;
+/**
+ * Updates the streaming URL and ustreamer config of an active SABR download.
+ * Call this from your `Event.SabrReloadPlayerResponse` handler after fetching a fresh player response.
+ * @param outputPath     The output path of the active download (used as the key)
+ * @param serverUrl      The new SABR server URL
+ * @param ustreamerConfig  The new ustreamer config (base64)
+ */
+export declare function updateSabrStream(outputPath: string, serverUrl: string, ustreamerConfig: string): Promise<void>;
 //# sourceMappingURL=trackPlayer.d.ts.map
