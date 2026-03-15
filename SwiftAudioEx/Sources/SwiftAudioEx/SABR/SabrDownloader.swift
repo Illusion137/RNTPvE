@@ -45,6 +45,8 @@ public class SabrDownloader {
         let fileHandle = try FileHandle(forWritingTo: outputPath)
 
         var downloadedMs: Double = 0
+        var lastProgressEmitTime: Date? = nil
+        let progressInterval: TimeInterval = 0.25  // 250 ms
 
         for try await chunk in audio_stream {
             fileHandle.write(chunk)
@@ -55,7 +57,11 @@ public class SabrDownloader {
                 let estimatedFraction = Double(chunk.count) / (Double(selected.audio_format.bitrate) / 8.0 * totalMs / 1000.0)
                 downloadedMs += estimatedFraction * totalMs
                 let fraction = min(downloadedMs / totalMs, 0.99)
-                progress(fraction)
+                let now = Date()
+                if lastProgressEmitTime == nil || now.timeIntervalSince(lastProgressEmitTime!) >= progressInterval {
+                    lastProgressEmitTime = now
+                    progress(fraction)
+                }
             }
         }
 

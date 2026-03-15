@@ -428,6 +428,12 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         )
 
         let stream = SabrStream(config: config)
+
+        // Register reload handler so the Rust library calls the callback rather than looping internally.
+        // No-op for now: stream will stall awaiting updateSabrStream, then time out gracefully.
+        // Full reload support (emitting SabrReloadPlayerResponse + JS updateSabrStream) can be added later.
+        stream.on_reload_player_response { _ in }
+
         let player = SabrAudioPlayer(stream: stream)
         sabrAudioPlayer = player
 
