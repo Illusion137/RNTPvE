@@ -19,6 +19,12 @@ export const useTrackPlayerEvents = <
   const savedHandler = useRef(handler);
   savedHandler.current = handler;
 
+  // Use a stable string key so the effect only re-runs when the set of
+  // subscribed event types actually changes, not on every render due to
+  // inline array literals having new references each time.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const eventsKey = events.join('\0');
+
   /* eslint-disable react-hooks/exhaustive-deps */
   useEffect(() => {
     if (__DEV__) {
@@ -44,5 +50,5 @@ export const useTrackPlayerEvents = <
     );
 
     return () => subs.forEach((sub) => sub.remove());
-  }, events);
+  }, [eventsKey]);
 };

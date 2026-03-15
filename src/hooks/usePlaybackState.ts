@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { startTransition, useEffect, useState } from 'react';
 
 import { getPlaybackState, addEventListener } from '../trackPlayer';
 import { Event } from '../constants';
@@ -32,7 +32,10 @@ export const usePlaybackState = (): PlaybackState | { state: undefined } => {
       });
 
     const sub = addEventListener(Event.PlaybackState, (state) => {
-      setPlaybackState(state);
+      // Use startTransition so rapid state changes (e.g. SABR loading sequence) are
+      // treated as non-urgent and do not interrupt in-progress navigation transitions,
+      // preventing "Maximum update depth exceeded" crashes.
+      startTransition(() => setPlaybackState(state));
     });
 
     return () => {
