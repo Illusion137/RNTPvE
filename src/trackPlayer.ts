@@ -544,3 +544,16 @@ export async function updateSabrStream(
 ): Promise<void> {
   return TrackPlayer.updateSabrStream(outputPath, serverUrl, ustreamerConfig);
 }
+
+/**
+ * Updates the PoToken of an active SABR download.
+ * Call this from your `Event.SabrRefreshPoToken` handler after obtaining a fresh PoToken.
+ * @param outputPath  The output path of the active download (used as the key)
+ * @param poToken     The refreshed PoToken
+ */
+export async function updateSabrPoToken(
+  outputPath: string,
+  poToken: string
+): Promise<void> {
+  return TrackPlayer.updateSabrPoToken(outputPath, poToken);
+}

@@ -13,6 +13,9 @@ public class SabrDownloader {
     /// Called when the server requests a player response reload. Provides the reload token (may be nil).
     public var onReloadPlayerResponse: ((String?) -> Void)?
 
+    /// Called when the server signals attestation pending (SPS=2), requesting a PoToken refresh.
+    public var onRefreshPoToken: (() -> Void)?
+
     public init(config: SabrStreamConfig) {
         sabrStream = SabrStream(config: config)
     }
@@ -23,6 +26,11 @@ public class SabrDownloader {
         sabrStream.set_ustreamer_config(config: ustreamerConfig)
     }
 
+    /// Updates the PoToken on the active stream (e.g. after a SPS=2 attestation refresh).
+    public func updatePoToken(poToken: String) {
+        sabrStream.set_po_token(po_token: poToken)
+    }
+
     /// Downloads the SABR audio stream to the given output path.
     /// - Parameters:
     ///   - outputPath: Destination file URL (should use .mp4 or .m4a extension)
@@ -31,6 +39,11 @@ public class SabrDownloader {
     public func download(to outputPath: URL, progress: @escaping ProgressCallback) async throws -> URL {
         sabrStream.on_reload_player_response { [weak self] ctx in
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
+        }
+        sabrStream.on_stream_protection_status_update { [weak self] status in
+            if status.status == 2 {
+                self?.onRefreshPoToken?()
+            }
         }
         let options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
         let (_, audio_stream, selected) = try await sabrStream.start(options: options)

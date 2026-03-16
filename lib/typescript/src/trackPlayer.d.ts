@@ -283,4 +283,11 @@ export declare function downloadSabr(params: SabrDownloadParams, outputPath: str
  * @param ustreamerConfig  The new ustreamer config (base64)
  */
 export declare function updateSabrStream(outputPath: string, serverUrl: string, ustreamerConfig: string): Promise<void>;
+/**
+ * Updates the PoToken of an active SABR download.
+ * Call this from your `Event.SabrRefreshPoToken` handler after obtaining a fresh PoToken.
+ * @param outputPath  The output path of the active download (used as the key)
+ * @param poToken     The refreshed PoToken
+ */
+export declare function updateSabrPoToken(outputPath: string, poToken: string): Promise<void>;
 //# sourceMappingURL=trackPlayer.d.ts.map

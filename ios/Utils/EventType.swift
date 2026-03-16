@@ -26,6 +26,7 @@ enum EventType: String, CaseIterable {
     case MetadataCommonReceived = "metadata-common-received"
     case SabrDownloadProgress = "sabr-download-progress"
     case SabrReloadPlayerResponse = "sabr-reload-player-response"
+    case SabrRefreshPoToken = "sabr-refresh-po-token"
 
     static func allRawValues() -> [String] {
         return allCases.map { $0.rawValue }

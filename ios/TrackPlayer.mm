@@ -201,6 +201,10 @@ RCT_EXPORT_MODULE()
   [nativeTrackPlayer updateSabrStream:outputPath serverUrl:serverUrl ustreamerConfig:ustreamerConfig resolver:resolve rejecter:reject];
 }
 
+- (void)updateSabrPoToken:(nonnull NSString *)outputPath poToken:(nonnull NSString *)poToken resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
+  [nativeTrackPlayer updateSabrPoToken:outputPath poToken:poToken resolver:resolve rejecter:reject];
+}
+
 // event listeners
 - (void)sendEvent:(NSString *)name body:(id)body {
   [super sendEventWithName:name body:body];

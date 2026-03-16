@@ -147,4 +147,10 @@ export enum Event {
    * Call `updateSabrStream` with new URL/config after fetching a fresh player response.
    **/
   SabrReloadPlayerResponse = 'sabr-reload-player-response',
+  /**
+   * Fired when the SABR server signals attestation pending (SPS=2), requesting a PoToken refresh.
+   * Payload: { outputPath: string }
+   * Call `updateSabrPoToken` with the refreshed token.
+   **/
+  SabrRefreshPoToken = 'sabr-refresh-po-token',
 }

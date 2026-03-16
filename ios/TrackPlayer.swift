@@ -896,6 +896,11 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             ])
         }
 
+        downloader.onRefreshPoToken = { [weak self] in
+            guard let self = self else { return }
+            self.emit(event: .SabrRefreshPoToken, body: ["outputPath": outputPath])
+        }
+
         Task {
             do {
                 _ = try await downloader.download(to: outputURL) { [weak self] fraction in
@@ -926,6 +931,21 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             return
         }
         downloader.updateStream(serverUrl: serverUrl, ustreamerConfig: ustreamerConfig)
+        resolve(NSNull())
+    }
+
+    @objc(updateSabrPoToken:poToken:resolver:rejecter:)
+    public func updateSabrPoToken(
+        outputPath: String,
+        poToken: String,
+        resolve: RCTPromiseResolveBlock,
+        reject: RCTPromiseRejectBlock
+    ) {
+        guard let downloader = sabrDownloaders[outputPath] else {
+            reject("E_SABR_NOT_FOUND", "No active SABR download for outputPath: \(outputPath)", nil)
+            return
+        }
+        downloader.updatePoToken(poToken: poToken)
         resolve(NSNull())
     }
 }

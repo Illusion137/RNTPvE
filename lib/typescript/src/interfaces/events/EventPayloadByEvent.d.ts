@@ -56,6 +56,9 @@ export type EventPayloadByEvent = {
         outputPath: string;
         token: string | null;
     };
+    [Event.SabrRefreshPoToken]: {
+        outputPath: string;
+    };
 };
 type Simplify<T> = {
     [KeyType in keyof T]: T[KeyType];
