@@ -16,10 +16,6 @@ public class SabrDownloader {
     /// Called when the server signals attestation pending (SPS=2), requesting a PoToken refresh.
     public var onRefreshPoToken: (() -> Void)?
 
-    /// The real PoToken to silently apply on the first SPS=2 (replaces placeholder).
-    public var realPoToken: String?
-    private var realTokenApplied = false
-
     public init(config: SabrStreamConfig) {
         sabrStream = SabrStream(config: config)
     }
@@ -45,16 +41,8 @@ public class SabrDownloader {
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
         }
         sabrStream.on_stream_protection_status_update { [weak self] status in
-            guard let self = self else { return }
             if status.status == 2 {
-                if !self.realTokenApplied, let token = self.realPoToken {
-                    // First SPS=2: silently upgrade placeholder → real token. No JS callback.
-                    self.realTokenApplied = true
-                    self.sabrStream.set_po_token(po_token: token)
-                } else {
-                    // Subsequent SPS=2 (token truly stale): ask JS to refresh.
-                    self.onRefreshPoToken?()
-                }
+                self?.onRefreshPoToken?()
             }
         }
         var options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
