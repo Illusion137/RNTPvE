@@ -605,7 +605,7 @@ class SabrStream {
                 ))
             }
 
-            if formats_initialized && !should_discard {
+            if formats_initialized || should_discard {
                 selected_format_ids.append(format)
             }
         }

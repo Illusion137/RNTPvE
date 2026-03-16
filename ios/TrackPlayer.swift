@@ -862,6 +862,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let formatsData = params["sabrFormats"] as? [[String: Any]] ?? []
         let formats = formatsData.compactMap { SabrFormat(dictionary: $0) }
         let poToken = params["poToken"] as? String
+        let placeholderPoToken = params["placeholder_po_token"] as? String
         let cookie = params["cookie"] as? String
         let clientInfoVal = params["clientInfo"] as? [String: Any]
         let clientName: Int32? = (clientInfoVal?["clientName"] as? NSNumber).map { Int32($0.intValue) }
@@ -871,7 +872,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let config = SabrStreamConfig(
             server_abr_streaming_url: serverUrl,
             video_playback_ustreamer_config: ustreamerConfig,
-            po_token: poToken,
+            po_token: placeholderPoToken ?? poToken,
             duration_ms: durationMs,
             formats: formats,
             client_name: clientName,
@@ -887,6 +888,11 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         }
         let downloader = SabrDownloader(config: config)
         sabrDownloaders[outputPath] = downloader
+
+        // When a placeholder was provided, store the real token for silent upgrade on first SPS=2.
+        if placeholderPoToken != nil {
+            downloader.realPoToken = poToken
+        }
 
         downloader.onReloadPlayerResponse = { [weak self] token in
             guard let self = self else { return }

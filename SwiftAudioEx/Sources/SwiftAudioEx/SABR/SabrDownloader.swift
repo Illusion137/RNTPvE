@@ -16,6 +16,10 @@ public class SabrDownloader {
     /// Called when the server signals attestation pending (SPS=2), requesting a PoToken refresh.
     public var onRefreshPoToken: (() -> Void)?
 
+    /// The real PoToken to silently apply on the first SPS=2 (replaces placeholder).
+    public var realPoToken: String?
+    private var realTokenApplied = false
+
     public init(config: SabrStreamConfig) {
         sabrStream = SabrStream(config: config)
     }
@@ -41,11 +45,20 @@ public class SabrDownloader {
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
         }
         sabrStream.on_stream_protection_status_update { [weak self] status in
+            guard let self = self else { return }
             if status.status == 2 {
-                self?.onRefreshPoToken?()
+                if !self.realTokenApplied, let token = self.realPoToken {
+                    // First SPS=2: silently upgrade placeholder → real token. No JS callback.
+                    self.realTokenApplied = true
+                    self.sabrStream.set_po_token(po_token: token)
+                } else {
+                    // Subsequent SPS=2 (token truly stale): ask JS to refresh.
+                    self.onRefreshPoToken?()
+                }
             }
         }
-        let options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        var options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        options.prefer_mp4 = true  // mp4a/AAC required for iOS AVFoundation; opus is unsupported
         let (_, audio_stream, selected) = try await sabrStream.start(options: options)
 
         let totalMs = Double(selected.audio_format.approx_duration_ms)
@@ -57,23 +70,29 @@ public class SabrDownloader {
         FileManager.default.createFile(atPath: outputPath.path, contents: nil)
         let fileHandle = try FileHandle(forWritingTo: outputPath)
 
-        var downloadedMs: Double = 0
+        var downloadedBytes: Double = 0
         var lastProgressEmitTime: Date? = nil
         let progressInterval: TimeInterval = 0.25  // 250 ms
 
         for try await chunk in audio_stream {
             fileHandle.write(chunk)
-            // Estimate progress: treat bytes as proportional to duration
-            // (accurate enough for CBR audio; SABR sends segments with known duration)
             if totalMs > 0 {
-                // Rough heuristic: bytes proportional to duration
-                let estimatedFraction = Double(chunk.count) / (Double(selected.audio_format.bitrate) / 8.0 * totalMs / 1000.0)
-                downloadedMs += estimatedFraction * totalMs
-                let fraction = min(downloadedMs / totalMs, 0.99)
-                let now = Date()
-                if lastProgressEmitTime == nil || now.timeIntervalSince(lastProgressEmitTime!) >= progressInterval {
-                    lastProgressEmitTime = now
-                    progress(fraction)
+                // Use exact content length when available; fall back to average bitrate estimate
+                let totalBytesEstimate: Double
+                if let cl = selected.audio_format.content_length.flatMap(Double.init), cl > 0 {
+                    totalBytesEstimate = cl
+                } else {
+                    let br = Double(selected.audio_format.average_bitrate ?? selected.audio_format.bitrate)
+                    totalBytesEstimate = br / 8.0 * totalMs / 1000.0
+                }
+                if totalBytesEstimate > 0 {
+                    downloadedBytes += Double(chunk.count)
+                    let fraction = min(downloadedBytes / totalBytesEstimate, 0.99)
+                    let now = Date()
+                    if lastProgressEmitTime == nil || now.timeIntervalSince(lastProgressEmitTime!) >= progressInterval {
+                        lastProgressEmitTime = now
+                        progress(fraction)
+                    }
                 }
             }
         }
