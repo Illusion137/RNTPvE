@@ -605,7 +605,7 @@ class SabrStream {
                 ))
             }
 
-            if formats_initialized || should_discard {
+            if formats_initialized && !should_discard {
                 selected_format_ids.append(format)
             }
         }
@@ -911,9 +911,11 @@ class SabrStream {
         }
 
         let loaded_bytes = segment.buffered_chunks.reduce(0) { $0 + $1.count }
-        let expected_bytes = Int(segment.media_header.content_length ?? "0") ?? 0
 
-        guard loaded_bytes == expected_bytes else {
+        if let cl_str = segment.media_header.content_length,
+           let expected_bytes = Int(cl_str),
+           expected_bytes > 0,
+           loaded_bytes != expected_bytes {
             logger.warn(tag: tag, message: "Content length mismatch for segment \(segment.segment_number) (Header ID: \(header_id), key: \(segment.format_id_key), expected: \(expected_bytes), received: \(loaded_bytes))")
             partial_segment_queue.removeValue(forKey: header_id)
             return

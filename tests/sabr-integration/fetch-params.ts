@@ -29,4 +29,8 @@ const result = execFileSync(
   { cwd: LIB_ORIGIN, stdio: ['ignore', 'pipe', 'inherit'] }
 );
 
-process.stdout.write(result);
+const raw = result.toString();
+const lines = raw.split('\n');
+const jsonStart = lines.findIndex((l) => l.trimStart().startsWith('{'));
+const jsonStr = jsonStart >= 0 ? lines.slice(jsonStart).join('\n') : raw;
+process.stdout.write(jsonStr);

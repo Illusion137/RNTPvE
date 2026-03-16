@@ -287,7 +287,7 @@ struct AbrState {
         s.playbackRate = Float(playback_rate)
         s.stickyResolution = Int32(sticky_resolution)
         s.clientViewportIsFlexible = client_viewport_is_flexible
-        s.bandwidthEstimate = 0
+        s.bandwidthEstimate = 5_000_000
         s.enabledTrackTypesBitfield = Int32(enabled_track_types_bitfield)
         if let atid = audio_track_id { s.audioTrackID = atid }
         return s
