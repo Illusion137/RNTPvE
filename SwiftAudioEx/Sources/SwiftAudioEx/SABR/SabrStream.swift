@@ -264,7 +264,8 @@ class SabrStream {
             }
 
             let max_retries = options.max_retries ?? default_max_retries
-            let enabled_track_types_bitfield = options.enabled_track_types ?? EnabledTrackTypes.video_and_audio
+            // Always audio-only: video is never needed for audio playback on Apple platforms.
+            let enabled_track_types_bitfield = EnabledTrackTypes.audio_only
 
             var abr_state = AbrState(
                 player_time_ms: player_time_ms,

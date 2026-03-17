@@ -20,6 +20,15 @@ func choose_format(
 
     guard !candidates.isEmpty else { return nil }
 
+    // Drop non-natively-playable audio formats (WebM/Opus are not supported by AVFoundation).
+    if options.is_audio {
+        let native = candidates.filter { format in
+            guard let mt = format.mime_type else { return false }
+            return !mt.contains("webm") && !mt.contains("opus")
+        }
+        if !native.isEmpty { candidates = native }
+    }
+
     // Filter by language
     if let language = options.language {
         let lang_matches = candidates.filter { $0.language == language }
