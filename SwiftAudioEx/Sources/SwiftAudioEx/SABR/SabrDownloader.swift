@@ -13,6 +13,10 @@ public class SabrDownloader {
     private let reloadLock = NSLock()
     private var reloadContinuation: CheckedContinuation<Void, Never>?
 
+    // PoToken refresh guard — prevents concurrent BotGuard attestation rounds
+    private let tokenRefreshLock = NSLock()
+    private var tokenRefreshInFlight = false
+
     public init(config: SabrStreamConfig) {
         self.config = config
         self.sabrStream = SabrStream(config: config)
@@ -32,6 +36,7 @@ public class SabrDownloader {
     }
 
     public func updatePoToken(poToken: String) {
+        tokenRefreshLock.withLock { tokenRefreshInFlight = false }
         config.po_token = poToken
         sabrStream.set_po_token(po_token: poToken)
     }
@@ -58,7 +63,22 @@ public class SabrDownloader {
                 self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
             }
             sabrStream.on_stream_protection_status_update { [weak self] status in
-                if status.status == 2 { self?.onRefreshPoToken?() }
+                guard let self else { return }
+                if status.status == 2 {
+                    let shouldFire = self.tokenRefreshLock.withLock {
+                        guard !self.tokenRefreshInFlight else { return false }
+                        self.tokenRefreshInFlight = true
+                        return true
+                    }
+                    if shouldFire {
+                        self.onRefreshPoToken?()
+                        // Auto-clear after 35s in case JS side never calls updatePoToken
+                        Task { [weak self] in
+                            try? await Task.sleep(nanoseconds: 35_000_000_000)
+                            self?.tokenRefreshLock.withLock { self?.tokenRefreshInFlight = false }
+                        }
+                    }
+                }
             }
 
             let (_, audio_stream, selected) = try await sabrStream.start(options: options)
