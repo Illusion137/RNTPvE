@@ -56,16 +56,14 @@ func is_google_video_url(_ url: URL) -> Bool {
 
 /// Fixes the `moov` box in a YouTube fMP4 audio init segment so iOS reports the correct duration.
 ///
-/// YouTube itag 140 init segments contain an `edts/elst` edit list whose entries inflate
-/// `tkhd.duration` (iOS AVFoundation treats `tkhd.duration` as the authoritative track length).
-/// Two corrections are applied to every `trak`:
-///   1. The `edts` box is stripped entirely.
-///   2. `tkhd.duration` is recomputed from `mdhd.duration` scaled to the movie timescale,
-///      so it reflects only the actual encoded samples.
+/// YouTube init segments contain an `edts/elst` edit list and incorrect `tkhd.duration` and
+/// `mdhd.duration` values. When `durationMs` is provided (from the YouTube API's
+/// `approxDurationMs` field), all three duration fields (`mvhd`, `tkhd`, `mdhd`) are patched
+/// to the correct value and `edts` is stripped. When `durationMs` is 0 only `edts` is stripped.
 ///
 /// Only the initialization segment (first chunk, containing ftyp+moov) needs this treatment;
 /// subsequent moof+mdat segments are returned unchanged.
-func fixMP4InitSegment(_ data: Data) -> Data {
+func fixMP4InitSegment(_ data: Data, durationMs: Double = 0) -> Data {
     var result = Data()
     var offset = 0
     while offset + 8 <= data.count {
@@ -76,7 +74,7 @@ func fixMP4InitSegment(_ data: Data) -> Data {
                                   ..<
                                   data.index(data.startIndex, offsetBy: end)]
             let mvhdTimescale = parseMvhdTimescale(in: moovContent)
-            let inner = fixMoovBoxes(moovContent, mvhdTimescale: mvhdTimescale)
+            let inner = fixMoovBoxes(moovContent, mvhdTimescale: mvhdTimescale, durationMs: durationMs)
             result.append(mp4WriteBox("moov", content: inner))
         } else {
             result.append(data[data.index(data.startIndex, offsetBy: offset)
@@ -88,8 +86,9 @@ func fixMP4InitSegment(_ data: Data) -> Data {
     return result.isEmpty ? data : result
 }
 
-private func fixMoovBoxes(_ data: Data, mvhdTimescale: UInt32) -> Data {
+private func fixMoovBoxes(_ data: Data, mvhdTimescale: UInt32, durationMs: Double) -> Data {
     var result = Data()
+    var mvhdOffset = -1
     var offset = 0
     while offset + 8 <= data.count {
         guard let (type, size) = mp4ReadBox(data, at: offset) else { break }
@@ -98,26 +97,32 @@ private func fixMoovBoxes(_ data: Data, mvhdTimescale: UInt32) -> Data {
             let inner = fixTrak(data[data.index(data.startIndex, offsetBy: offset + 8)
                                     ..<
                                     data.index(data.startIndex, offsetBy: end)],
-                                mvhdTimescale: mvhdTimescale)
+                                mvhdTimescale: mvhdTimescale,
+                                durationMs: durationMs)
             result.append(mp4WriteBox("trak", content: inner))
         } else {
+            if type == "mvhd" { mvhdOffset = result.count }
             result.append(data[data.index(data.startIndex, offsetBy: offset)
                                ..<
                                data.index(data.startIndex, offsetBy: min(end, data.count))])
         }
         offset = end
     }
+    if durationMs > 0, mvhdOffset >= 0, mvhdTimescale > 0 {
+        let dur = UInt64((durationMs * Double(mvhdTimescale) / 1000.0).rounded())
+        patchMvhdDuration(&result, at: mvhdOffset, duration: dur)
+    }
     return result
 }
 
-/// Strips `edts` from a trak and patches `tkhd.duration` to match `mdhd.duration` scaled
-/// to the movie timescale, eliminating the encoder-delay inflation that iOS reads from the
-/// original `tkhd.duration`.
-private func fixTrak(_ data: Data, mvhdTimescale: UInt32) -> Data {
+/// Strips `edts` from a trak and patches `tkhd.duration` and `mdhd.duration` to the value
+/// derived from `durationMs` (the authoritative YouTube API duration). When `durationMs` is 0
+/// only `edts` is stripped.
+private func fixTrak(_ data: Data, mvhdTimescale: UInt32, durationMs: Double) -> Data {
     var result = Data()
     var tkhdOffset = -1
+    var mdhdOffsetInResult = -1
     var mdhdTimescale: UInt32 = 0
-    var mdhdDuration: UInt64 = 0
 
     var offset = 0
     while offset + 8 <= data.count {
@@ -135,7 +140,10 @@ private func fixTrak(_ data: Data, mvhdTimescale: UInt32) -> Data {
             let mdiaInner = data[data.index(data.startIndex, offsetBy: offset + 8)
                                 ..<
                                 data.index(data.startIndex, offsetBy: min(end, data.count))]
-            (mdhdTimescale, mdhdDuration) = parseMdhd(in: mdiaInner)
+            if let (relOff, ts) = parseMdhdLocation(in: mdiaInner) {
+                mdhdOffsetInResult = result.count + 8 + relOff
+                mdhdTimescale = ts
+            }
             result.append(slice)
         } else {
             result.append(slice)
@@ -143,9 +151,15 @@ private func fixTrak(_ data: Data, mvhdTimescale: UInt32) -> Data {
         offset = end
     }
 
-    if tkhdOffset >= 0, mdhdTimescale > 0, mvhdTimescale > 0 {
-        let corrected = mdhdDuration * UInt64(mvhdTimescale) / UInt64(mdhdTimescale)
-        patchTkhdDuration(&result, at: tkhdOffset, duration: corrected)
+    if durationMs > 0 {
+        if tkhdOffset >= 0, mvhdTimescale > 0 {
+            let dur = UInt64((durationMs * Double(mvhdTimescale) / 1000.0).rounded())
+            patchTkhdDuration(&result, at: tkhdOffset, duration: dur)
+        }
+        if mdhdOffsetInResult >= 0, mdhdTimescale > 0 {
+            let dur = UInt64((durationMs * Double(mdhdTimescale) / 1000.0).rounded())
+            patchMdhdDuration(&result, at: mdhdOffsetInResult, duration: dur)
+        }
     }
 
     return result
@@ -168,8 +182,8 @@ private func parseMvhdTimescale(in data: Data) -> UInt32 {
     return 0
 }
 
-/// Reads `mdhd.timescale` and `mdhd.duration` from the mdia content slice.
-private func parseMdhd(in data: Data) -> (timescale: UInt32, duration: UInt64) {
+/// Returns the offset of the `mdhd` box (relative to `data` start index 0) and its timescale.
+private func parseMdhdLocation(in data: Data) -> (relativeOffset: Int, timescale: UInt32)? {
     var offset = 0
     while offset + 8 <= data.count {
         guard let (type, size) = mp4ReadBox(data, at: offset) else { break }
@@ -177,21 +191,13 @@ private func parseMdhd(in data: Data) -> (timescale: UInt32, duration: UInt64) {
             let base = data.startIndex + offset
             guard base + 9 <= data.endIndex else { break }
             let version = data[base + 8]
-            if version == 1 {
-                // timescale@28 (UInt32), duration@32 (UInt64)
-                guard let ts = readU32(data, at: base + 28),
-                      let dur = readU64(data, at: base + 32) else { break }
-                return (ts, dur)
-            } else {
-                // timescale@20 (UInt32), duration@24 (UInt32)
-                guard let ts  = readU32(data, at: base + 20),
-                      let dur = readU32(data, at: base + 24) else { break }
-                return (ts, UInt64(dur))
-            }
+            // version=0: timescale@20; version=1: timescale@28
+            guard let ts = readU32(data, at: base + (version == 1 ? 28 : 20)) else { break }
+            return (offset, ts)
         }
         offset += size
     }
-    return (0, 0)
+    return nil
 }
 
 /// Overwrites the `duration` field inside a `tkhd` box that starts at `tkhdOffset` in `data`.
@@ -214,6 +220,64 @@ private func patchTkhdDuration(_ data: inout Data, at tkhdOffset: Int, duration:
     } else {
         // duration is UInt32 at offset 28
         let off = base + 28
+        guard off + 4 <= data.endIndex else { return }
+        let dur32 = UInt32(min(duration, UInt64(UInt32.max)))
+        data[off + 0] = UInt8((dur32 >> 24) & 0xFF)
+        data[off + 1] = UInt8((dur32 >> 16) & 0xFF)
+        data[off + 2] = UInt8((dur32 >>  8) & 0xFF)
+        data[off + 3] = UInt8( dur32        & 0xFF)
+    }
+}
+
+/// Overwrites the `duration` field inside an `mdhd` box that starts at `mdhdOffset` in `data`.
+private func patchMdhdDuration(_ data: inout Data, at mdhdOffset: Int, duration: UInt64) {
+    let base = data.startIndex + mdhdOffset
+    guard base + 9 <= data.endIndex else { return }
+    let version = data[base + 8]
+    if version == 1 {
+        // duration is UInt64 at offset 32
+        let off = base + 32
+        guard off + 8 <= data.endIndex else { return }
+        data[off + 0] = UInt8((duration >> 56) & 0xFF)
+        data[off + 1] = UInt8((duration >> 48) & 0xFF)
+        data[off + 2] = UInt8((duration >> 40) & 0xFF)
+        data[off + 3] = UInt8((duration >> 32) & 0xFF)
+        data[off + 4] = UInt8((duration >> 24) & 0xFF)
+        data[off + 5] = UInt8((duration >> 16) & 0xFF)
+        data[off + 6] = UInt8((duration >>  8) & 0xFF)
+        data[off + 7] = UInt8( duration        & 0xFF)
+    } else {
+        // duration is UInt32 at offset 24
+        let off = base + 24
+        guard off + 4 <= data.endIndex else { return }
+        let dur32 = UInt32(min(duration, UInt64(UInt32.max)))
+        data[off + 0] = UInt8((dur32 >> 24) & 0xFF)
+        data[off + 1] = UInt8((dur32 >> 16) & 0xFF)
+        data[off + 2] = UInt8((dur32 >>  8) & 0xFF)
+        data[off + 3] = UInt8( dur32        & 0xFF)
+    }
+}
+
+/// Overwrites the `duration` field inside an `mvhd` box that starts at `mvhdOffset` in `data`.
+private func patchMvhdDuration(_ data: inout Data, at mvhdOffset: Int, duration: UInt64) {
+    let base = data.startIndex + mvhdOffset
+    guard base + 9 <= data.endIndex else { return }
+    let version = data[base + 8]
+    if version == 1 {
+        // duration is UInt64 at offset 32
+        let off = base + 32
+        guard off + 8 <= data.endIndex else { return }
+        data[off + 0] = UInt8((duration >> 56) & 0xFF)
+        data[off + 1] = UInt8((duration >> 48) & 0xFF)
+        data[off + 2] = UInt8((duration >> 40) & 0xFF)
+        data[off + 3] = UInt8((duration >> 32) & 0xFF)
+        data[off + 4] = UInt8((duration >> 24) & 0xFF)
+        data[off + 5] = UInt8((duration >> 16) & 0xFF)
+        data[off + 6] = UInt8((duration >>  8) & 0xFF)
+        data[off + 7] = UInt8( duration        & 0xFF)
+    } else {
+        // duration is UInt32 at offset 24
+        let off = base + 24
         guard off + 4 <= data.endIndex else { return }
         let dur32 = UInt32(min(duration, UInt64(UInt32.max)))
         data[off + 0] = UInt8((dur32 >> 24) & 0xFF)

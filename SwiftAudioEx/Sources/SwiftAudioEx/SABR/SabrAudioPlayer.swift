@@ -91,7 +91,7 @@ class SabrAudioPlayer: NSObject, AVAssetResourceLoaderDelegate {
                 var proactiveFired = false
                 for try await chunk in audio_stream {
                     guard !Task.isCancelled else { break }
-                    let chunkToAppend = initFixed ? chunk : { initFixed = true; return fixMP4InitSegment(chunk) }()
+                    let chunkToAppend = initFixed ? chunk : { initFixed = true; return fixMP4InitSegment(chunk, durationMs: Double(fmt.approx_duration_ms)) }()
                     await MainActor.run {
                         self.audioData.append(chunkToAppend)
                         if !proactiveFired && self.audioData.count >= 512_000 {

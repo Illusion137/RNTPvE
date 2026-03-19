@@ -102,7 +102,7 @@ public class SabrDownloader {
                 for try await chunk in audio_stream {
                     let chunkToWrite: Data
                     if !initFixed {
-                        chunkToWrite = fixMP4InitSegment(chunk)
+                        chunkToWrite = fixMP4InitSegment(chunk, durationMs: Double(selected.audio_format.approx_duration_ms))
                         initFixed = true
                     } else {
                         chunkToWrite = chunk
