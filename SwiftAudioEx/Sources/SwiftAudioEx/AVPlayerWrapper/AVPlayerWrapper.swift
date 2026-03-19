@@ -245,6 +245,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
     
     func load() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.sync { self.load() }
+            return
+        }
         if (state == .failed) {
             recreateAVPlayer()
         } else {
@@ -526,6 +530,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
     
     private func applyAVPlayerRate() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.applyAVPlayerRate() }
+            return
+        }
         avPlayer.rate = playWhenReady ? _rate : 0
     }
 }

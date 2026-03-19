@@ -608,7 +608,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         }
         player.clear()
         try? player.add(items: tracks)
-        resolve(index)
+        resolve(NSNull())
     }
 
     @objc
