@@ -7,7 +7,7 @@ public class SabrDownloader {
     private var config: SabrStreamConfig         // mutable — updated by updateStream()
 
     public var onReloadPlayerResponse: ((String?) -> Void)?
-    public var onRefreshPoToken: (() -> Void)?
+    public var onRefreshPoToken: ((String) -> Void)?
 
     // Reload signalling — protected by a simple NSLock
     private let reloadLock = NSLock()
@@ -56,6 +56,9 @@ public class SabrDownloader {
         var downloadedBytes: Double = 0
         var lastProgressEmitTime: Date? = nil
         let progressInterval: TimeInterval = 0.25
+        let proactiveThreshold: Double = 512_000
+        var proactiveFired = false
+        var initFixed = false
 
         while true {
             // Register callbacks on whichever stream instance is current
@@ -71,7 +74,7 @@ public class SabrDownloader {
                         return true
                     }
                     if shouldFire {
-                        self.onRefreshPoToken?()
+                        self.onRefreshPoToken?("expired")
                         // Auto-clear after 35s in case JS side never calls updatePoToken
                         Task { [weak self] in
                             try? await Task.sleep(nanoseconds: 35_000_000_000)
@@ -97,7 +100,14 @@ public class SabrDownloader {
             var reloadRequested = false
             do {
                 for try await chunk in audio_stream {
-                    fileHandle.write(chunk)
+                    let chunkToWrite: Data
+                    if !initFixed {
+                        chunkToWrite = fixMP4InitSegment(chunk)
+                        initFixed = true
+                    } else {
+                        chunkToWrite = chunk
+                    }
+                    fileHandle.write(chunkToWrite)
                     if totalBytesEstimate > 0 {
                         downloadedBytes += Double(chunk.count)
                         let fraction = min(downloadedBytes / totalBytesEstimate, 0.99)
@@ -106,6 +116,10 @@ public class SabrDownloader {
                             lastProgressEmitTime = now
                             progress(fraction)
                         }
+                    }
+                    if !proactiveFired && downloadedBytes >= proactiveThreshold {
+                        proactiveFired = true
+                        self.onRefreshPoToken?("proactive")
                     }
                 }
             } catch let error as NSError where error.domain == "SabrStream" && error.code == -2 {
@@ -144,6 +158,8 @@ public class SabrDownloader {
             fileHandle.truncateFile(atOffset: 0)
             downloadedBytes = 0
             lastProgressEmitTime = nil
+            proactiveFired = false
+            initFixed = false
             sabrStream = SabrStream(config: config)  // config has updated URL/ustreamerConfig
         }
 

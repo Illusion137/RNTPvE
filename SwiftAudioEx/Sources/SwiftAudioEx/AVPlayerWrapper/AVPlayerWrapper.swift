@@ -437,12 +437,18 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         let player = SabrAudioPlayer(stream: stream)
         sabrAudioPlayer = player
 
+        player.onRefreshPoToken = { reason in
+            print("SabrAudioPlayer: PoToken refresh requested (\(reason))")
+        }
+        player.onReloadPlayerResponse = { _ in }
+
         let pendingAsset = AVURLAsset(url: SabrAudioPlayer.assetURL)
         pendingAsset.resourceLoader.setDelegate(player, queue: DispatchQueue.main)
         asset = pendingAsset
         state = .loading
 
-        let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        var playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        playbackOptions.prefer_mp4 = true
         player.start(options: playbackOptions)
 
         // Create item directly — the resource loader handles all asset loading

@@ -31,10 +31,16 @@ class SabrAudioPlayer: NSObject, AVAssetResourceLoaderDelegate {
     /// Content type UTI for the audio. Defaults to M4A; updated once format is known.
     private var contentTypeUTI: String = "com.apple.m4a-audio"
 
+    /// Estimated content length derived from format metadata.
+    private var estimatedContentLength: Int64 = 0
+
     /// Loading requests from AVPlayer that are waiting for data.
     private var pendingRequests: [AVAssetResourceLoadingRequest] = []
 
     private var streamTask: Task<Void, Never>?
+
+    var onRefreshPoToken: ((String) -> Void)?
+    var onReloadPlayerResponse: ((String?) -> Void)?
 
     // MARK: - Init
 
@@ -47,20 +53,51 @@ class SabrAudioPlayer: NSObject, AVAssetResourceLoaderDelegate {
     /// Begins downloading the SABR audio stream and feeding data to pending AVPlayer requests.
     /// Must be called on the main actor (same queue as the resource loader delegate).
     func start(options: SabrPlaybackOptions) {
+        var opts = options
+        opts.prefer_mp4 = true
+
+        sabrStream.on_stream_protection_status_update { [weak self] status in
+            if status.status == 2 { self?.onRefreshPoToken?("expired") }
+        }
+        sabrStream.on_reload_player_response { [weak self] ctx in
+            self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
+        }
+
         streamTask = Task { [weak self] in
             guard let self = self else { return }
             do {
-                let (_, audio_stream, selected) = try await sabrStream.start(options: options)
+                let (_, audio_stream, selected) = try await sabrStream.start(options: opts)
 
                 // Update UTI from the actual selected format MIME type
                 let mimeType = selected.audio_format.mime_type ?? "audio/mp4"
                 let uti = Self.utiForMimeType(mimeType)
-                await MainActor.run { self.contentTypeUTI = uti }
 
+                // Compute estimated content length
+                let fmt = selected.audio_format
+                let cl: Int64
+                if let s = fmt.content_length, let v = Int64(s), v > 0 { cl = v }
+                else {
+                    let ms = Double(fmt.approx_duration_ms)
+                    let br = Double(fmt.average_bitrate ?? fmt.bitrate)
+                    cl = (ms > 0 && br > 0) ? Int64(br / 8.0 * ms / 1000.0) : 0
+                }
+
+                await MainActor.run {
+                    self.contentTypeUTI = uti
+                    self.estimatedContentLength = cl
+                }
+
+                var initFixed = false
+                var proactiveFired = false
                 for try await chunk in audio_stream {
                     guard !Task.isCancelled else { break }
+                    let chunkToAppend = initFixed ? chunk : { initFixed = true; return fixMP4InitSegment(chunk) }()
                     await MainActor.run {
-                        self.audioData.append(chunk)
+                        self.audioData.append(chunkToAppend)
+                        if !proactiveFired && self.audioData.count >= 512_000 {
+                            proactiveFired = true
+                            self.onRefreshPoToken?("proactive")
+                        }
                         self.processPendingRequests()
                     }
                 }
@@ -80,6 +117,10 @@ class SabrAudioPlayer: NSObject, AVAssetResourceLoaderDelegate {
                 }
             }
         }
+    }
+
+    func updatePoToken(_ poToken: String) {
+        sabrStream.set_po_token(po_token: poToken)
     }
 
     // MARK: - Cancellation
@@ -124,10 +165,13 @@ class SabrAudioPlayer: NSObject, AVAssetResourceLoaderDelegate {
         // Fill content info (required by AVPlayer before it knows what to do with the asset)
         if let infoRequest = request.contentInformationRequest {
             infoRequest.contentType = contentTypeUTI
-            // Byte range seeking is supported — we serve any offset from our buffer
-            infoRequest.isByteRangeAccessSupported = true
-            // Advertise actual size when known; use a large estimate while streaming
-            infoRequest.contentLength = streamFinished ? Int64(audioData.count) : Int64.max
+            // Sequential stream — byte-range access disabled to prevent AVPlayer from
+            // issuing random-access probes (e.g. seek to end for duration) that can
+            // never be satisfied, which was causing AVPlayer to stall indefinitely.
+            infoRequest.isByteRangeAccessSupported = false
+            infoRequest.contentLength = streamFinished
+                ? Int64(audioData.count)
+                : (estimatedContentLength > 0 ? estimatedContentLength : Int64(audioData.count))
         }
 
         guard let dataRequest = request.dataRequest else {

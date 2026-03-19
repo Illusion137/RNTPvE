@@ -896,9 +896,12 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             ])
         }
 
-        downloader.onRefreshPoToken = { [weak self] in
+        downloader.onRefreshPoToken = { [weak self] reason in
             guard let self = self else { return }
-            self.emit(event: .SabrRefreshPoToken, body: ["outputPath": outputPath])
+            self.emit(event: .SabrRefreshPoToken, body: [
+                "outputPath": outputPath,
+                "reason": reason
+            ])
         }
 
         Task {
