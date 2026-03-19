@@ -148,8 +148,10 @@ export enum Event {
    **/
   SabrReloadPlayerResponse = 'sabr-reload-player-response',
   /**
-   * Fired when the SABR server signals attestation pending (SPS=2), requesting a PoToken refresh.
-   * Payload: { outputPath: string }
+   * Fired when a PoToken refresh is needed.
+   * Payload: { outputPath: string, reason: 'proactive' | 'expired' }
+   * - 'proactive': fired at ~512KB so JS has time to mint a token before expiry
+   * - 'expired': fired when the server signals attestation pending (SPS=2)
    * Call `updateSabrPoToken` with the refreshed token.
    **/
   SabrRefreshPoToken = 'sabr-refresh-po-token',

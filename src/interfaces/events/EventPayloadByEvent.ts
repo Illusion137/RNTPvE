@@ -57,7 +57,7 @@ export type EventPayloadByEvent = {
   [Event.AndroidConnectorDisconnected]: AndroidControllerDisconnectedEvent;
   [Event.SabrDownloadProgress]: { outputPath: string; progress: number };
   [Event.SabrReloadPlayerResponse]: { outputPath: string; token: string | null };
-  [Event.SabrRefreshPoToken]: { outputPath: string };
+  [Event.SabrRefreshPoToken]: { outputPath: string; reason: 'proactive' | 'expired' };
 };
 
 type Simplify<T> = { [KeyType in keyof T]: T[KeyType] } & {};

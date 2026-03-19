@@ -122,11 +122,11 @@ private func stripEdtsFromTrak(_ data: Data) -> Data {
 /// Returns (fourCC, totalBoxSize) for the MP4 box at `offset`, or nil on malformed data.
 private func mp4ReadBox(_ data: Data, at offset: Int) -> (String, Int)? {
     guard offset + 8 <= data.count else { return nil }
-    let sizeBE = data[data.index(data.startIndex, offsetBy: offset)
-                      ..<
-                      data.index(data.startIndex, offsetBy: offset + 4)]
-        .withUnsafeBytes { $0.load(as: UInt32.self).bigEndian }
-    let size = Int(sizeBE)
+    let i = data.index(data.startIndex, offsetBy: offset)
+    let size = Int(UInt32(data[i]) << 24
+                 | UInt32(data[data.index(i, offsetBy: 1)]) << 16
+                 | UInt32(data[data.index(i, offsetBy: 2)]) << 8
+                 | UInt32(data[data.index(i, offsetBy: 3)]))
     guard size >= 8, offset + size <= data.count else { return nil }
     let typeBytes = data[data.index(data.startIndex, offsetBy: offset + 4)
                          ..<
