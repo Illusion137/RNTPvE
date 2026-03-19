@@ -56,10 +56,11 @@ func is_google_video_url(_ url: URL) -> Bool {
 
 /// Fixes the `moov` box in a YouTube fMP4 audio init segment so iOS reports the correct duration.
 ///
-/// YouTube init segments contain an `edts/elst` edit list and incorrect `tkhd.duration` and
-/// `mdhd.duration` values. When `durationMs` is provided (from the YouTube API's
-/// `approxDurationMs` field), all three duration fields (`mvhd`, `tkhd`, `mdhd`) are patched
-/// to the correct value and `edts` is stripped. When `durationMs` is 0 only `edts` is stripped.
+/// YouTube init segments contain an `edts/elst` edit list that trims playback to the audible
+/// portion, but `tkhd.duration` and `mvhd.duration` are wrong. This function replaces the `edts`
+/// with a fresh one whose `elst.segment_duration` equals `durationMs`, and patches `tkhd.duration`
+/// and `mvhd.duration` to match. `mdhd.duration` is left untouched (it correctly reflects the
+/// total encoded sample count). When `durationMs` is 0 only `tkhd`/`mvhd` patching is skipped.
 ///
 /// Only the initialization segment (first chunk, containing ftyp+moov) needs this treatment;
 /// subsequent moof+mdat segments are returned unchanged.
@@ -115,14 +116,12 @@ private func fixMoovBoxes(_ data: Data, mvhdTimescale: UInt32, durationMs: Doubl
     return result
 }
 
-/// Strips `edts` from a trak and patches `tkhd.duration` and `mdhd.duration` to the value
-/// derived from `durationMs` (the authoritative YouTube API duration). When `durationMs` is 0
-/// only `edts` is stripped.
+/// Replaces the `edts` in a trak with a fresh one specifying `durationMs`, and patches
+/// `tkhd.duration` to match. `mdhd.duration` is intentionally left untouched.
 private func fixTrak(_ data: Data, mvhdTimescale: UInt32, durationMs: Double) -> Data {
     var result = Data()
     var tkhdOffset = -1
-    var mdhdOffsetInResult = -1
-    var mdhdTimescale: UInt32 = 0
+    var edtsWritten = false
 
     var offset = 0
     while offset + 8 <= data.count {
@@ -132,17 +131,14 @@ private func fixTrak(_ data: Data, mvhdTimescale: UInt32, durationMs: Double) ->
                         ..<
                         data.index(data.startIndex, offsetBy: min(end, data.count))]
         if type == "edts" {
-            // strip — do not append
+            // strip old (wrong) edts — replacement inserted before mdia below
         } else if type == "tkhd" {
             tkhdOffset = result.count
             result.append(slice)
         } else if type == "mdia" {
-            let mdiaInner = data[data.index(data.startIndex, offsetBy: offset + 8)
-                                ..<
-                                data.index(data.startIndex, offsetBy: min(end, data.count))]
-            if let (relOff, ts) = parseMdhdLocation(in: mdiaInner) {
-                mdhdOffsetInResult = result.count + 8 + relOff
-                mdhdTimescale = ts
+            if durationMs > 0, !edtsWritten {
+                result.append(makeEdts(durationMs: durationMs, mvhdTimescale: mvhdTimescale))
+                edtsWritten = true
             }
             result.append(slice)
         } else {
@@ -151,18 +147,28 @@ private func fixTrak(_ data: Data, mvhdTimescale: UInt32, durationMs: Double) ->
         offset = end
     }
 
-    if durationMs > 0 {
-        if tkhdOffset >= 0, mvhdTimescale > 0 {
-            let dur = UInt64((durationMs * Double(mvhdTimescale) / 1000.0).rounded())
-            patchTkhdDuration(&result, at: tkhdOffset, duration: dur)
-        }
-        if mdhdOffsetInResult >= 0, mdhdTimescale > 0 {
-            let dur = UInt64((durationMs * Double(mdhdTimescale) / 1000.0).rounded())
-            patchMdhdDuration(&result, at: mdhdOffsetInResult, duration: dur)
-        }
+    if durationMs > 0, tkhdOffset >= 0, mvhdTimescale > 0 {
+        let dur = UInt64((durationMs * Double(mvhdTimescale) / 1000.0).rounded())
+        patchTkhdDuration(&result, at: tkhdOffset, duration: dur)
     }
 
     return result
+}
+
+/// Builds a minimal version-0 `edts` box with a single `elst` entry whose
+/// `segment_duration` equals `durationMs` (in movie timescale units).
+private func makeEdts(durationMs: Double, mvhdTimescale: UInt32) -> Data {
+    let segDur = UInt32((durationMs * Double(mvhdTimescale) / 1000.0).rounded())
+    var elstContent = Data()
+    elstContent.append(contentsOf: [0, 0, 0, 0])          // version=0, flags=0
+    elstContent.append(contentsOf: [0, 0, 0, 1])          // entry_count = 1
+    elstContent.append(UInt8((segDur >> 24) & 0xFF))      // segment_duration
+    elstContent.append(UInt8((segDur >> 16) & 0xFF))
+    elstContent.append(UInt8((segDur >>  8) & 0xFF))
+    elstContent.append(UInt8( segDur        & 0xFF))
+    elstContent.append(contentsOf: [0, 0, 0, 0])          // media_time = 0
+    elstContent.append(contentsOf: [0, 1, 0, 0])          // media_rate = 1.0 (16.16 fixed)
+    return mp4WriteBox("edts", content: mp4WriteBox("elst", content: elstContent))
 }
 
 /// Reads `mvhd.timescale` from the moov content slice.
@@ -180,24 +186,6 @@ private func parseMvhdTimescale(in data: Data) -> UInt32 {
         offset += size
     }
     return 0
-}
-
-/// Returns the offset of the `mdhd` box (relative to `data` start index 0) and its timescale.
-private func parseMdhdLocation(in data: Data) -> (relativeOffset: Int, timescale: UInt32)? {
-    var offset = 0
-    while offset + 8 <= data.count {
-        guard let (type, size) = mp4ReadBox(data, at: offset) else { break }
-        if type == "mdhd" {
-            let base = data.startIndex + offset
-            guard base + 9 <= data.endIndex else { break }
-            let version = data[base + 8]
-            // version=0: timescale@20; version=1: timescale@28
-            guard let ts = readU32(data, at: base + (version == 1 ? 28 : 20)) else { break }
-            return (offset, ts)
-        }
-        offset += size
-    }
-    return nil
 }
 
 /// Overwrites the `duration` field inside a `tkhd` box that starts at `tkhdOffset` in `data`.
@@ -220,35 +208,6 @@ private func patchTkhdDuration(_ data: inout Data, at tkhdOffset: Int, duration:
     } else {
         // duration is UInt32 at offset 28
         let off = base + 28
-        guard off + 4 <= data.endIndex else { return }
-        let dur32 = UInt32(min(duration, UInt64(UInt32.max)))
-        data[off + 0] = UInt8((dur32 >> 24) & 0xFF)
-        data[off + 1] = UInt8((dur32 >> 16) & 0xFF)
-        data[off + 2] = UInt8((dur32 >>  8) & 0xFF)
-        data[off + 3] = UInt8( dur32        & 0xFF)
-    }
-}
-
-/// Overwrites the `duration` field inside an `mdhd` box that starts at `mdhdOffset` in `data`.
-private func patchMdhdDuration(_ data: inout Data, at mdhdOffset: Int, duration: UInt64) {
-    let base = data.startIndex + mdhdOffset
-    guard base + 9 <= data.endIndex else { return }
-    let version = data[base + 8]
-    if version == 1 {
-        // duration is UInt64 at offset 32
-        let off = base + 32
-        guard off + 8 <= data.endIndex else { return }
-        data[off + 0] = UInt8((duration >> 56) & 0xFF)
-        data[off + 1] = UInt8((duration >> 48) & 0xFF)
-        data[off + 2] = UInt8((duration >> 40) & 0xFF)
-        data[off + 3] = UInt8((duration >> 32) & 0xFF)
-        data[off + 4] = UInt8((duration >> 24) & 0xFF)
-        data[off + 5] = UInt8((duration >> 16) & 0xFF)
-        data[off + 6] = UInt8((duration >>  8) & 0xFF)
-        data[off + 7] = UInt8( duration        & 0xFF)
-    } else {
-        // duration is UInt32 at offset 24
-        let off = base + 24
         guard off + 4 <= data.endIndex else { return }
         let dur32 = UInt32(min(duration, UInt64(UInt32.max)))
         data[off + 0] = UInt8((dur32 >> 24) & 0xFF)
