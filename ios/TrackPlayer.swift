@@ -608,7 +608,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         }
         player.clear()
         try? player.add(items: tracks)
-        resolve(NSNull())
+        resolve(index)
     }
 
     @objc
@@ -816,9 +816,9 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             ]
         )
     }
-    
+
     // MARK: - Equalizer
-    
+
     @objc
     public func setEqualizer(bands: [NSNumber], resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
         if (rejectWhenNotInitialized(reject: reject)) { return }
@@ -826,7 +826,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         player.setEqualizerBands(floatBands)
         resolve(NSNull())
     }
-    
+
     @objc
     public func getEqualizer(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
         if (rejectWhenNotInitialized(reject: reject)) { return }
@@ -834,7 +834,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let bands = player.getEqualizerBands()
         resolve(bands.map { NSNumber(value: $0) })
     }
-    
+
     @objc
     public func removeEqualizer(resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
         if (rejectWhenNotInitialized(reject: reject)) { return }
