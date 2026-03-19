@@ -246,7 +246,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     
     func load() {
         guard Thread.isMainThread else {
-            DispatchQueue.main.sync { self.load() }
+            DispatchQueue.main.async { self.load() }
             return
         }
         if (state == .failed) {
