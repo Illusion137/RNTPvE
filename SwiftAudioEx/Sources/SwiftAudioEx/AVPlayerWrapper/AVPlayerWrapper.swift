@@ -269,6 +269,13 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 return
             }
 
+            // Local WebM/Opus files (AVPlayer doesn't support .webm natively)
+            if url.isFileURL,
+               ["webm", "opus"].contains(url.pathExtension.lowercased()) {
+                loadOpusFile(url: url)
+                return
+            }
+
             // AVURLAsset supporting streaming (HLS) and progressive download.
             // The player will automatically detect the stream type.
             let pendingAsset = AVURLAsset(url: url, options: urlOptions)
@@ -468,6 +475,26 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         player.start(options: playbackOptions, durationMs: durationMs)
     }
 
+    private func loadOpusFile(url: URL) {
+        let player = SabrOpusPlayer()
+        sabrOpusPlayer = player
+
+        player.onDidStartPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.opusPlayStartDate = Date()
+            self.state = .playing
+        }
+        player.onDidFinishPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.state = .ended
+            self.delegate?.AVWrapperItemDidPlayToEndTime()
+        }
+
+        state = .loading
+        let durationMs = (passedDuration ?? 0) * 1000
+        player.startFile(url: url, durationMs: durationMs)
+    }
+
     // MARK: - Util
 
     private func clearCurrentItem() {
@@ -532,7 +559,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
         if let opusPlayer = sabrOpusPlayer {
             if playWhenReady {
-                if !opusPlayer.playerNode.isPlaying {
+                if !opusPlayer.playerNode.isPlaying && opusPlayer.engine.isRunning {
                     opusPlayer.playerNode.play()
                 }
                 if let pausedAt = opusPausedAt {

@@ -33,8 +33,10 @@ class SabrOpusPlayer {
 
     // MARK: - Private state
 
-    private let sabrStream: SabrStream
+    private let sabrStream: SabrStream?
     private var streamTask: Task<Void, Never>?
+    private var isCancelled = false
+    private var interruptionObserver: Any?
 
     // MARK: - Init
 
@@ -42,6 +44,41 @@ class SabrOpusPlayer {
         self.sabrStream = stream
         engine.attach(playerNode)
         engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        setupInterruptionObserver()
+    }
+
+    init() {
+        self.sabrStream = nil
+        engine.attach(playerNode)
+        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        setupInterruptionObserver()
+    }
+
+    deinit {
+        if let obs = interruptionObserver { NotificationCenter.default.removeObserver(obs) }
+    }
+
+    private func setupInterruptionObserver() {
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in self?.handleAudioInterruption(notification) }
+        #endif
+    }
+
+    private func handleAudioInterruption(_ notification: Notification) {
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        guard let info = notification.userInfo,
+              let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: typeValue),
+              type == .ended else { return }
+        try? AVAudioSession.sharedInstance().setActive(true)
+        guard !engine.isRunning else { return }
+        try? engine.start()
+        if !playerNode.isPlaying { playerNode.play() }
+        #endif
     }
 
     // MARK: - Start
@@ -52,17 +89,17 @@ class SabrOpusPlayer {
         opts.prefer_web_m = true
         opts.prefer_mp4 = nil
 
-        sabrStream.on_stream_protection_status_update { [weak self] (status: StreamProtectionStatus) in
+        sabrStream?.on_stream_protection_status_update { [weak self] (status: StreamProtectionStatus) in
             if status.status == 2 { self?.onRefreshPoToken?("expired") }
         }
-        sabrStream.on_reload_player_response { [weak self] (ctx: ReloadPlaybackContext) in
+        sabrStream?.on_reload_player_response { [weak self] (ctx: ReloadPlaybackContext) in
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
         }
 
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
-                let (_, audio_stream, _) = try await sabrStream.start(options: opts)
+                let (_, audio_stream, _) = try await sabrStream!.start(options: opts)
                 try await self.runPipeline(audioStream: audio_stream, durationMs: durationMs)
             } catch {
                 guard !Task.isCancelled else { return }
@@ -71,15 +108,28 @@ class SabrOpusPlayer {
         }
     }
 
+    func startFile(url: URL, durationMs: Double = 0) {
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs)
+            } catch {
+                guard !Task.isCancelled else { return }
+                log("file playback error: \(error)")
+            }
+        }
+    }
+
     func cancel() {
+        isCancelled = true
         streamTask?.cancel()
-        sabrStream.abort()
+        sabrStream?.abort()
         playerNode.stop()
         if engine.isRunning { engine.stop() }
     }
 
     func updatePoToken(_ poToken: String) {
-        sabrStream.set_po_token(po_token: poToken)
+        sabrStream?.set_po_token(po_token: poToken)
     }
 
     // MARK: - Pipeline
@@ -134,6 +184,11 @@ class SabrOpusPlayer {
 
                 if !engineStarted {
                     do {
+                        #if os(iOS) || os(tvOS) || os(watchOS)
+                        let session = AVAudioSession.sharedInstance()
+                        try session.setCategory(.playback, mode: .default)
+                        try session.setActive(true)
+                        #endif
                         try engine.start()
                         engineStarted = true
                     } catch {
@@ -192,8 +247,42 @@ class SabrOpusPlayer {
             DispatchQueue.main.async { cb?() }
         }
 
-        let finishCb = onDidFinishPlaying
-        DispatchQueue.main.async { finishCb?() }
+        // Schedule a silent sentinel buffer so the finish callback fires only after
+        // all queued PCM data has actually been played back.
+        if engineStarted, let pcmFmt = pcmFormat,
+           let sentinel = AVAudioPCMBuffer(pcmFormat: pcmFmt, frameCapacity: 1) {
+            sentinel.frameLength = 1
+            playerNode.scheduleBuffer(sentinel, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+                guard let self, !self.isCancelled else { return }
+                let cb = self.onDidFinishPlaying
+                DispatchQueue.main.async { cb?() }
+            }
+        } else {
+            let cb = onDidFinishPlaying
+            DispatchQueue.main.async { cb?() }
+        }
+    }
+
+    // MARK: - File stream
+
+    private func makeFileStream(url: URL, chunkSize: Int = 65536) -> AsyncThrowingStream<Data, Error> {
+        AsyncThrowingStream { continuation in
+            Task {
+                do {
+                    let handle = try FileHandle(forReadingFrom: url)
+                    defer { try? handle.close() }
+                    while true {
+                        let chunk = handle.readData(ofLength: chunkSize)
+                        if chunk.isEmpty { break }
+                        continuation.yield(chunk)
+                        try Task.checkCancellation()
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+        }
     }
 
     // MARK: - Opus decode
