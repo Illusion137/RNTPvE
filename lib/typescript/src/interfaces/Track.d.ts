@@ -13,6 +13,8 @@ export interface Track extends TrackMetadataBase {
     headers?: {
         [key: string]: any;
     };
+    /** (iOS only) Force WebM/Opus playback pipeline for local downloaded files. */
+    isOpus?: boolean;
     /** (iOS only) Activate YouTube SABR (server-adaptive bitrate) mode. */
     isSabr?: boolean;
     /** (iOS only) SABR server endpoint URL. */

@@ -136,6 +136,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     var duration: TimeInterval {
+        // Opus path: passedDuration is always authoritative (no AVPlayerItem)
+        if sabrOpusPlayer != nil, let d = passedDuration, !d.isNaN {
+            return d
+        }
         if sourceType == .stream, let duration = passedDuration, !duration.isNaN {
             return duration
         }
@@ -270,9 +274,15 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             }
 
             // Local WebM/Opus files (AVPlayer doesn't support .webm natively)
-            if url.isFileURL,
-               ["webm", "opus"].contains(url.pathExtension.lowercased()) {
-                loadOpusFile(url: url)
+            let isExplicitOpus = urlOptions?["isOpus"] as? Bool == true
+            let ext = url.pathExtension.lowercased()
+            let hasOpusExtension = ["webm", "opus"].contains(ext)
+            // url.scheme == nil covers plain absolute paths like /var/mobile/...
+            let isLocalOpusFile = (url.isFileURL || url.scheme == nil) && hasOpusExtension
+            if isExplicitOpus || isLocalOpusFile {
+                // Normalise to a proper file URL so FileHandle can open it
+                let fileUrl = url.isFileURL ? url : URL(fileURLWithPath: url.path)
+                loadOpusFile(url: fileUrl)
                 return
             }
 
@@ -479,6 +489,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             self.delegate?.AVWrapperItemDidPlayToEndTime()
         }
 
+        player.onDidFailPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
+        }
+
         player.onEngineStarted = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
             self.applyAVPlayerRate()
@@ -504,6 +519,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             guard let self, self.sabrOpusPlayer === player else { return }
             self.state = .ended
             self.delegate?.AVWrapperItemDidPlayToEndTime()
+        }
+        player.onDidFailPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
         }
         player.onEngineStarted = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }

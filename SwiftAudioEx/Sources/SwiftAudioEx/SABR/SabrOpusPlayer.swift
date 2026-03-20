@@ -27,6 +27,8 @@ class SabrOpusPlayer {
     var onDidStartPlaying: (() -> Void)?
     /// Called on the main thread when the stream ends (gate fired or stream exhausted).
     var onDidFinishPlaying: (() -> Void)?
+    /// Called on the main thread when playback fails with an error.
+    var onDidFailPlaying: (() -> Void)?
     /// Called on the main thread immediately after AVAudioEngine starts successfully.
     var onEngineStarted: (() -> Void)?
 
@@ -124,7 +126,7 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("stream error: \(error)")
-                let cb = onDidFinishPlaying
+                let cb = onDidFailPlaying
                 DispatchQueue.main.async { cb?() }
             }
         }
@@ -138,6 +140,8 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("file playback error: \(error)")
+                let cb = onDidFailPlaying
+                DispatchQueue.main.async { cb?() }
             }
         }
     }

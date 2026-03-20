@@ -31,6 +31,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     var artwork: MPMediaItemArtwork?
 
     // SABR streaming params (YouTube server-adaptive bitrate)
+    var isOpus: Bool?
     var isSabr: Bool?
     var sabrServerUrl: String?
     var sabrUstreamerConfig: String?
@@ -45,6 +46,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         self.headers = dictionary["headers"] as? [String: Any]
         self.userAgent = dictionary["userAgent"] as? String
         self.pitchAlgorithm = dictionary["pitchAlgorithm"] as? String
+        self.isOpus = dictionary["isOpus"] as? Bool
         self.isSabr = dictionary["isSabr"] as? Bool
         self.sabrServerUrl = dictionary["sabrServerUrl"] as? String
         self.sabrUstreamerConfig = dictionary["sabrUstreamerConfig"] as? String
@@ -150,6 +152,9 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
                 // https://developer.apple.com/documentation/avfoundation/avurlassethttpuseragentkey
                 options[AVURLAssetHTTPUserAgentKey] = userAgent
             }
+        }
+        if isOpus == true {
+            options["isOpus"] = true
         }
         // SABR params — only included when isSabr is true
         if isSabr == true, let sabrServerUrl = sabrServerUrl {
