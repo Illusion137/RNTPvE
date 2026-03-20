@@ -75,6 +75,33 @@ final class SabrLiveTests: XCTestCase {
 
     // MARK: - Tests
 
+    /// Verifies that SabrDownloader completes a full Opus/WebM download:
+    ///   - download() resolves (promise doesn't hang)
+    ///   - Output file is non-empty
+    ///   - Progress reaches exactly 1.0
+    ///
+    /// Run with:
+    ///   SABR_FETCH_CMD="npx ts-node tests/sabr-integration/fetch-params.ts jNQXAC9IVRw" \
+    ///     swift test --filter SabrLiveTests/testOpusDownload
+    func testOpusDownload() async throws {
+        let outputURL = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("sabr-live-opus-\(UUID().uuidString).webm")
+        defer { try? FileManager.default.removeItem(at: outputURL) }
+
+        var progressHistory: [Double] = []
+        let downloader = SabrDownloader(config: params.makeConfig())
+
+        let result = try await downloader.download(to: outputURL, preferOpus: true) { progress in
+            progressHistory.append(progress)
+        }
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: result.path), "Output file must exist")
+        let fileSize = (try FileManager.default.attributesOfItem(atPath: result.path)[.size] as? Int) ?? 0
+        XCTAssertGreaterThan(fileSize, 4096, "Downloaded opus file must be at least 4 KB")
+        XCTAssertFalse(progressHistory.isEmpty, "Progress callback must fire at least once")
+        XCTAssertEqual(progressHistory.last ?? 0, 1.0, accuracy: 0.001, "Progress must reach 1.0")
+    }
+
     /// Full audio-only download with real network.
     /// Asserts the file is written, non-empty, and progress reaches 1.0.
     func testAudioDownload() async throws {

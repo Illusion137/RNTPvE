@@ -302,6 +302,8 @@ class SabrStream {
 
                 abr_state.player_time_ms = main_format.map { get_total_downloaded_duration($0) } ?? 0
 
+                if abr_state.player_time_ms >= duration_ms { break }  // all segments downloaded
+
                 let stall_check = check_for_stall(player_time_ms: abr_state.player_time_ms, stall_detection_ms: options.stall_detection_ms)
 
                 if stall_check.should_stop { break }

@@ -38,7 +38,9 @@ class SabrOpusPlayer {
     private let sabrStream: SabrStream?
     private var streamTask: Task<Void, Never>?
     private var isCancelled = false
+    private var engineStarted = false
     private var interruptionObserver: Any?
+    private var engineConfigObserver: Any?
 
     // MARK: - Init
 
@@ -58,6 +60,7 @@ class SabrOpusPlayer {
 
     deinit {
         if let obs = interruptionObserver { NotificationCenter.default.removeObserver(obs) }
+        if let obs = engineConfigObserver { NotificationCenter.default.removeObserver(obs) }
     }
 
     private func setupInterruptionObserver() {
@@ -68,6 +71,21 @@ class SabrOpusPlayer {
             queue: .main
         ) { [weak self] notification in self?.handleAudioInterruption(notification) }
         #endif
+        engineConfigObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: .main
+        ) { [weak self] _ in self?.handleEngineConfigurationChange() }
+    }
+
+    private func handleEngineConfigurationChange() {
+        guard !isCancelled, engineStarted else { return }
+        do {
+            try engine.start()
+            if !playerNode.isPlaying { playerNode.play() }
+        } catch {
+            log("engine restart after config change failed: \(error)")
+        }
     }
 
     private func handleAudioInterruption(_ notification: Notification) {
@@ -124,6 +142,7 @@ class SabrOpusPlayer {
 
     func cancel() {
         isCancelled = true
+        engineStarted = false
         streamTask?.cancel()
         sabrStream?.abort()
         playerNode.stop()
@@ -149,7 +168,7 @@ class SabrOpusPlayer {
         var pcmFormat: AVAudioFormat?
         var opusFormat: AVAudioFormat?
         var preSkipRemaining = 0
-        var engineStarted = false
+        engineStarted = false
         var proactiveFired = false
         var totalBytesReceived = 0
 
@@ -201,10 +220,26 @@ class SabrOpusPlayer {
                         let engineCb = onEngineStarted
                         DispatchQueue.main.async { engineCb?() }
                     } catch {
+                        #if os(iOS) || os(tvOS) || os(watchOS)
+                        // Retry: force session active first, then try engine again
+                        do {
+                            try AVAudioSession.sharedInstance().setActive(true)
+                            try engine.start()
+                            engineStarted = true
+                            let engineCb = onEngineStarted
+                            DispatchQueue.main.async { engineCb?() }
+                        } catch let retryError {
+                            log("engine.start() failed after retry: \(retryError)")
+                            let cb = onDidFinishPlaying
+                            DispatchQueue.main.async { cb?() }
+                            return
+                        }
+                        #else
                         log("engine.start() failed: \(error)")
                         let cb = onDidFinishPlaying
                         DispatchQueue.main.async { cb?() }
                         return
+                        #endif
                     }
                 }
             }
