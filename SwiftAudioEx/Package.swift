@@ -11,12 +11,14 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.27.0"),
+        .package(url: "https://github.com/alta/swift-opus.git", from: "0.0.1"),
     ],
     targets: [
         .target(
             name: "SwiftAudioEx",
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+                .product(name: "Opus", package: "swift-opus"),
             ]),
         .testTarget(
             name: "SwiftAudioExTests",

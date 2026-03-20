@@ -1,12 +1,13 @@
 import AVFoundation
+import Opus
 
 /// Plays a YouTube SABR audio stream using the WebM/Opus pipeline.
 ///
 /// Uses `EBMLParser` to extract Opus packets from fWebM chunks, decodes them
-/// with `AVAudioConverter` (AudioToolbox Opus, iOS 13+), and schedules PCM
-/// buffers on `AVAudioPlayerNode`. Stops scheduling at the exact Opus frame
-/// boundary where `blockTimestampMs >= durationMs`, eliminating the silent
-/// tail that AVFoundation's fMP4 pipeline cannot suppress.
+/// with `Opus.Decoder` (libopus via swift-opus), and schedules PCM buffers on
+/// `AVAudioPlayerNode`. Stops scheduling at the exact Opus frame boundary where
+/// `blockTimestampMs >= durationMs`, eliminating the silent tail that AVFoundation's
+/// fMP4 pipeline cannot suppress.
 ///
 /// Usage:
 /// ```swift
@@ -167,12 +168,9 @@ class SabrOpusPlayer {
     ) async throws {
         let ebml = EBMLParser()
 
-        // We need stream info before we can set up the converter.
-        // Collect packets until we have it.
         var pendingPackets: [OpusPacket] = []
-        var converter: AVAudioConverter?
+        var opusDecoder: Opus.Decoder?
         var pcmFormat: AVAudioFormat?
-        var opusFormat: AVAudioFormat?
         var preSkipRemaining = 0
         engineStarted = false
         var proactiveFired = false
@@ -190,23 +188,23 @@ class SabrOpusPlayer {
                 onRefreshPoToken?("proactive")
             }
 
-            // Set up converter once we have stream info
-            if converter == nil, let info = ebml.streamInfo {
+            // Set up decoder once we have stream info
+            if opusDecoder == nil, let info = ebml.streamInfo {
                 guard let formats = makeFormats(info: info) else {
                     log("failed to create audio formats")
                     let cb = onDidFailPlaying
                     DispatchQueue.main.async { cb?() }
                     return
                 }
-                opusFormat = formats.opus
                 pcmFormat = formats.pcm
-                guard let conv = AVAudioConverter(from: formats.opus, to: formats.pcm) else {
-                    log("AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
+                do {
+                    opusDecoder = try Opus.Decoder(format: formats.pcm, application: .audio)
+                } catch {
+                    log("Opus.Decoder init failed: \(error)")
                     let cb = onDidFailPlaying
                     DispatchQueue.main.async { cb?() }
                     return
                 }
-                converter = conv
                 preSkipRemaining = info.preSkip
 
                 // Wire engine with the real PCM format now that we know it
@@ -254,14 +252,12 @@ class SabrOpusPlayer {
                 }
             }
 
-            // Flush any packets accumulated before converter was ready
+            // Flush any packets accumulated before decoder was ready
             let toProcess = pendingPackets + ebml.packets
             pendingPackets = []
 
-            guard let conv = converter,
-                  let pcmFmt = pcmFormat,
-                  let opusFmt = opusFormat else {
-                // Converter not ready yet; hold onto packets
+            guard let dec = opusDecoder, let pcmFmt = pcmFormat else {
+                // Decoder not ready yet; hold onto packets
                 pendingPackets.append(contentsOf: ebml.packets)
                 continue
             }
@@ -277,8 +273,7 @@ class SabrOpusPlayer {
 
                 guard let pcmBuf = decode(
                     packet: packet,
-                    converter: conv,
-                    opusFormat: opusFmt,
+                    decoder: dec,
                     pcmFormat: pcmFmt,
                     preSkipRemaining: &preSkipRemaining
                 ) else { continue }
@@ -366,16 +361,27 @@ class SabrOpusPlayer {
             return nil
         }
         result.frameLength = totalFrames
-        var offset = 0
+
         let channelCount = Int(format.channelCount)
-        for buf in buffers {
-            let len = Int(buf.frameLength)
-            for ch in 0..<channelCount {
-                guard let src = buf.floatChannelData?[ch],
-                      let dst = result.floatChannelData?[ch] else { continue }
-                dst.advanced(by: offset).update(from: src, count: len)
+        if format.isInterleaved && channelCount > 1 {
+            guard let dst = result.floatChannelData?[0] else { return nil }
+            var dstOffset = 0
+            for buf in buffers {
+                let copyCount = Int(buf.frameLength) * channelCount
+                guard let src = buf.floatChannelData?[0] else { continue }
+                dst.advanced(by: dstOffset).update(from: src, count: copyCount)
+                dstOffset += copyCount
             }
-            offset += len
+        } else {
+            var frameOffset = 0
+            for buf in buffers {
+                let len = Int(buf.frameLength)
+                for ch in 0..<channelCount {
+                    guard let src = buf.floatChannelData?[ch], let dst = result.floatChannelData?[ch] else { continue }
+                    dst.advanced(by: frameOffset).update(from: src, count: len)
+                }
+                frameOffset += len
+            }
         }
         return result
     }
@@ -383,87 +389,55 @@ class SabrOpusPlayer {
     // MARK: - Opus decode
 
     private struct AudioFormats {
-        let opus: AVAudioFormat
         let pcm: AVAudioFormat
     }
 
     private func makeFormats(info: OpusStreamInfo) -> AudioFormats? {
-        var opusDesc = AudioStreamBasicDescription(
-            mSampleRate: info.sampleRate,
-            mFormatID: kAudioFormatOpus,
-            mFormatFlags: 0,
-            mBytesPerPacket: 0,
-            mFramesPerPacket: 0,
-            mBytesPerFrame: 0,
-            mChannelsPerFrame: UInt32(info.channelCount),
-            mBitsPerChannel: 0,
-            mReserved: 0
-        )
-        guard let opusFmt = AVAudioFormat(streamDescription: &opusDesc) else { return nil }
+        // Always 48000 Hz — libopus decodes at 48kHz regardless of OpusHead sampleRate
+        // swift-opus extension creates interleaved format for stereo
         guard let pcmFmt = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: info.sampleRate,
-            channels: AVAudioChannelCount(info.channelCount),
-            interleaved: false
+            opusPCMFormat: .float32,
+            sampleRate: 48000,
+            channels: AVAudioChannelCount(info.channelCount)
         ) else { return nil }
-        return AudioFormats(opus: opusFmt, pcm: pcmFmt)
+        return AudioFormats(pcm: pcmFmt)
     }
 
     private func decode(
         packet: OpusPacket,
-        converter: AVAudioConverter,
-        opusFormat: AVAudioFormat,
+        decoder: Opus.Decoder,
         pcmFormat: AVAudioFormat,
         preSkipRemaining: inout Int
     ) -> AVAudioPCMBuffer? {
-        let compressed = AVAudioCompressedBuffer(
-            format: opusFormat,
-            packetCapacity: 1,
-            maximumPacketSize: max(packet.data.count, 1)
-        )
-        compressed.packetCount = 1
-        compressed.byteLength = UInt32(packet.data.count)
-        packet.data.copyBytes(
-            to: compressed.data.bindMemory(to: UInt8.self, capacity: packet.data.count),
-            count: packet.data.count
-        )
-
-        // Max Opus frame: 120 ms @ 48 kHz = 5760 samples
-        guard let pcmBuf = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: 5760) else {
+        let pcmBuf: AVAudioPCMBuffer
+        do {
+            pcmBuf = try decoder.decode(packet.data)
+        } catch {
+            log("Opus decode error: \(error)")
             return nil
         }
 
-        var convError: NSError?
-        let status = converter.convert(to: pcmBuf, error: &convError) { _, outStatus in
-            outStatus.pointee = .haveData
-            return compressed
-        }
+        guard preSkipRemaining > 0 else { return pcmBuf }
 
-        if status == .error {
-            log("decode error: \(convError?.localizedDescription ?? "unknown")")
-            return nil
-        }
+        let frameLen = Int(pcmBuf.frameLength)
+        let skip = min(preSkipRemaining, frameLen)
+        preSkipRemaining -= skip
+        if skip == frameLen { return nil }
 
-        // Apply pre-skip: discard the first `preSkip` samples
-        if preSkipRemaining > 0 && pcmBuf.frameLength > 0 {
-            let skip = min(preSkipRemaining, Int(pcmBuf.frameLength))
-            preSkipRemaining -= skip
-            if skip == Int(pcmBuf.frameLength) { return nil }  // entirely pre-skip
+        let remaining = frameLen - skip
+        guard let trimmed = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: AVAudioFrameCount(remaining)) else { return nil }
+        trimmed.frameLength = AVAudioFrameCount(remaining)
 
-            let remaining = Int(pcmBuf.frameLength) - skip
-            guard let trimmed = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: AVAudioFrameCount(remaining)) else {
-                return nil
-            }
-            trimmed.frameLength = AVAudioFrameCount(remaining)
-            let channelCount = Int(pcmFormat.channelCount)
+        let channelCount = Int(pcmFormat.channelCount)
+        if pcmFormat.isInterleaved && channelCount > 1 {
+            guard let src = pcmBuf.floatChannelData?[0], let dst = trimmed.floatChannelData?[0] else { return nil }
+            dst.update(from: src.advanced(by: skip * channelCount), count: remaining * channelCount)
+        } else {
             for ch in 0..<channelCount {
-                guard let src = pcmBuf.floatChannelData?[ch],
-                      let dst = trimmed.floatChannelData?[ch] else { continue }
+                guard let src = pcmBuf.floatChannelData?[ch], let dst = trimmed.floatChannelData?[ch] else { continue }
                 dst.update(from: src.advanced(by: skip), count: remaining)
             }
-            return trimmed
         }
-
-        return pcmBuf
+        return trimmed
     }
 }
