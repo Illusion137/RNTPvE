@@ -142,6 +142,34 @@ final class SabrLiveTests: XCTestCase {
         )
     }
 
+    /// Verifies the full EBML → Opus → PCM pipeline:
+    ///   - onDidStartPlaying fires (engine started, audio is flowing)
+    ///   - onDidFinishPlaying fires (sentinel played back, track would advance)
+    ///
+    /// Run with:
+    ///   SABR_FETCH_CMD="npx ts-node tests/sabr-integration/fetch-params.ts jNQXAC9IVRw" \
+    ///     swift test --filter SabrLiveTests/testOpusPlayback
+    func testOpusPlayback() async throws {
+        let shortDurationMs = 5_000.0   // gate after 5 s of audio
+
+        let didStart  = expectation(description: "onDidStartPlaying")
+        let didFinish = expectation(description: "onDidFinishPlaying")
+
+        let stream = SabrStream(config: params.makeConfig())
+        let player = SabrOpusPlayer(stream: stream)
+        player.onRefreshPoToken    = { _ in }
+        player.onReloadPlayerResponse = { _ in }
+        player.onDidStartPlaying   = { didStart.fulfill() }
+        player.onDidFinishPlaying  = { didFinish.fulfill() }
+
+        let opts = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        player.start(options: opts, durationMs: shortDurationMs)
+        defer { player.cancel() }
+
+        // Allow 60 s: network latency + buffering + 5 s playback + sentinel
+        await fulfillment(of: [didStart, didFinish], timeout: 60, enforceOrder: true)
+    }
+
     /// Verifies that after the first round-trip, any sabrContexts returned by the
     /// server appear in the second outgoing request.
     func testSabrContextsPropagatedToNextRequest() async throws {

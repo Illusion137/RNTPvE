@@ -468,6 +468,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             self.delegate?.AVWrapperItemDidPlayToEndTime()
         }
 
+        player.onEngineStarted = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.applyAVPlayerRate()
+        }
+
         state = .loading
 
         let durationMs = (passedDuration ?? 0) * 1000
@@ -488,6 +493,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             guard let self, self.sabrOpusPlayer === player else { return }
             self.state = .ended
             self.delegate?.AVWrapperItemDidPlayToEndTime()
+        }
+        player.onEngineStarted = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.applyAVPlayerRate()
         }
 
         state = .loading

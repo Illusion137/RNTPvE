@@ -27,6 +27,8 @@ class SabrOpusPlayer {
     var onDidStartPlaying: (() -> Void)?
     /// Called on the main thread when the stream ends (gate fired or stream exhausted).
     var onDidFinishPlaying: (() -> Void)?
+    /// Called on the main thread immediately after AVAudioEngine starts successfully.
+    var onEngineStarted: (() -> Void)?
 
     let engine = AVAudioEngine()
     let playerNode = AVAudioPlayerNode()
@@ -183,16 +185,25 @@ class SabrOpusPlayer {
                 engine.connect(playerNode, to: engine.mainMixerNode, format: formats.pcm)
 
                 if !engineStarted {
+                    #if os(iOS) || os(tvOS) || os(watchOS)
                     do {
-                        #if os(iOS) || os(tvOS) || os(watchOS)
                         let session = AVAudioSession.sharedInstance()
                         try session.setCategory(.playback, mode: .default)
                         try session.setActive(true)
-                        #endif
+                    } catch {
+                        log("AVAudioSession setup failed (non-fatal): \(error)")
+                        // continue — engine.start() may still succeed
+                    }
+                    #endif
+                    do {
                         try engine.start()
                         engineStarted = true
+                        let engineCb = onEngineStarted
+                        DispatchQueue.main.async { engineCb?() }
                     } catch {
                         log("engine.start() failed: \(error)")
+                        let cb = onDidFinishPlaying
+                        DispatchQueue.main.async { cb?() }
                         return
                     }
                 }
@@ -245,6 +256,12 @@ class SabrOpusPlayer {
             playerNode.play()
             let cb = onDidStartPlaying
             DispatchQueue.main.async { cb?() }
+        }
+
+        // Ensure the node is playing before scheduling the sentinel, so the
+        // completionCallbackType: .dataPlayedBack callback actually fires.
+        if engineStarted && !playerNode.isPlaying {
+            playerNode.play()
         }
 
         // Schedule a silent sentinel buffer so the finish callback fires only after
