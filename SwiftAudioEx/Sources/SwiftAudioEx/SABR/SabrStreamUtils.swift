@@ -20,14 +20,8 @@ func choose_format(
 
     guard !candidates.isEmpty else { return nil }
 
-    // Drop non-natively-playable audio formats (WebM/Opus are not supported by AVFoundation).
-    if options.is_audio {
-        let native = candidates.filter { format in
-            guard let mt = format.mime_type else { return false }
-            return !mt.contains("webm") && !mt.contains("opus")
-        }
-        if !native.isEmpty { candidates = native }
-    }
+    // WebM/Opus is handled by SabrOpusPlayer (AVAudioEngine + AudioToolbox pipeline).
+    // No exclusion needed here; callers opt into WebM via prefer_opus/prefer_web_m.
 
     // Filter by language
     if let language = options.language {

@@ -41,9 +41,18 @@ public class SabrDownloader {
         sabrStream.set_po_token(po_token: poToken)
     }
 
-    public func download(to outputPath: URL, progress: @escaping ProgressCallback) async throws -> URL {
+    public func download(
+        to outputPath: URL,
+        preferOpus: Bool = false,
+        progress: @escaping ProgressCallback
+    ) async throws -> URL {
         var options = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
-        options.prefer_mp4 = true
+        if preferOpus {
+            options.prefer_opus = true
+            options.prefer_web_m = true
+        } else {
+            options.prefer_mp4 = true
+        }
 
         try FileManager.default.createDirectory(
             at: outputPath.deletingLastPathComponent(),
@@ -101,7 +110,7 @@ public class SabrDownloader {
             do {
                 for try await chunk in audio_stream {
                     let chunkToWrite: Data
-                    if !initFixed {
+                    if !preferOpus && !initFixed {
                         chunkToWrite = fixMP4InitSegment(chunk, durationMs: Double(selected.audio_format.approx_duration_ms))
                         initFixed = true
                     } else {

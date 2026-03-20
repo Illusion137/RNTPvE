@@ -33,7 +33,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var item: AVPlayerItem? = nil
     fileprivate var url: URL? = nil
     fileprivate var urlOptions: [String: Any]? = nil
-    private var sabrAudioPlayer: SabrAudioPlayer? = nil
+    private var sabrOpusPlayer: SabrOpusPlayer? = nil
+    /// Wall-clock time when the opus player started playing (adjusted for pauses).
+    private var opusPlayStartDate: Date? = nil
+    /// Wall-clock time when opus was paused (nil when not paused).
+    private var opusPausedAt: Date? = nil
     fileprivate var passedDuration: TimeInterval?
     fileprivate var sourceType: SourceType?
 
@@ -119,6 +123,14 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     var currentTime: TimeInterval {
+        // Opus path: AVPlayer has no item, so track elapsed wall-clock time instead.
+        if sabrOpusPlayer != nil {
+            guard let start = opusPlayStartDate else { return 0 }
+            if let pausedAt = opusPausedAt {
+                return pausedAt.timeIntervalSince(start)
+            }
+            return Date().timeIntervalSince(start)
+        }
         let seconds = avPlayer.currentTime().seconds
         return seconds.isNaN ? 0 : seconds
     }
@@ -429,52 +441,40 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         let stream = SabrStream(config: config)
 
-        // Register reload handler so the Rust library calls the callback rather than looping internally.
-        // No-op for now: stream will stall awaiting updateSabrStream, then time out gracefully.
-        // Full reload support (emitting SabrReloadPlayerResponse + JS updateSabrStream) can be added later.
-        stream.on_reload_player_response { _ in }
-
-        let player = SabrAudioPlayer(stream: stream)
-        sabrAudioPlayer = player
+        let player = SabrOpusPlayer(stream: stream)
+        sabrOpusPlayer = player
 
         player.onRefreshPoToken = { reason in
-            print("SabrAudioPlayer: PoToken refresh requested (\(reason))")
+            print("SabrOpusPlayer: PoToken refresh requested (\(reason))")
         }
         player.onReloadPlayerResponse = { _ in }
 
-        let pendingAsset = AVURLAsset(url: SabrAudioPlayer.assetURL)
-        pendingAsset.resourceLoader.setDelegate(player, queue: DispatchQueue.main)
-        asset = pendingAsset
+        player.onDidStartPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.opusPlayStartDate = Date()
+            self.state = .playing
+        }
+
+        player.onDidFinishPlaying = { [weak self] in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.state = .ended
+            self.delegate?.AVWrapperItemDidPlayToEndTime()
+        }
+
         state = .loading
 
-        var playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
-        playbackOptions.prefer_mp4 = true
-        player.start(options: playbackOptions)
-
-        // Create item directly — the resource loader handles all asset loading
-        let playerItem = AVPlayerItem(asset: pendingAsset)
-        playerItem.preferredForwardBufferDuration = bufferDuration
-        self.item = playerItem
-
-        if audioProcessingEnabled {
-            applyAudioTap(to: playerItem, asset: pendingAsset)
-        }
-
-        avPlayer.replaceCurrentItem(with: playerItem)
-        startObservingAVPlayer(item: playerItem)
-        applyAVPlayerRate()
-
-        if let initialTime = timeToSeekToAfterLoading {
-            timeToSeekToAfterLoading = nil
-            seek(to: initialTime)
-        }
+        let durationMs = (passedDuration ?? 0) * 1000
+        let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        player.start(options: playbackOptions, durationMs: durationMs)
     }
 
     // MARK: - Util
 
     private func clearCurrentItem() {
-        sabrAudioPlayer?.cancel()
-        sabrAudioPlayer = nil
+        sabrOpusPlayer?.cancel()
+        sabrOpusPlayer = nil
+        opusPlayStartDate = nil
+        opusPausedAt = nil
 
         guard let asset = asset else { return }
         stopObservingAVPlayerItem()
@@ -530,7 +530,25 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             DispatchQueue.main.async { [weak self] in self?.applyAVPlayerRate() }
             return
         }
-        avPlayer.rate = playWhenReady ? _rate : 0
+        if let opusPlayer = sabrOpusPlayer {
+            if playWhenReady {
+                if !opusPlayer.playerNode.isPlaying {
+                    opusPlayer.playerNode.play()
+                }
+                if let pausedAt = opusPausedAt {
+                    // Shift startDate forward by however long we were paused
+                    opusPlayStartDate = opusPlayStartDate.map { $0.addingTimeInterval(Date().timeIntervalSince(pausedAt)) }
+                    opusPausedAt = nil
+                }
+            } else {
+                if opusPlayer.playerNode.isPlaying {
+                    opusPlayer.playerNode.pause()
+                    opusPausedAt = Date()
+                }
+            }
+        } else {
+            avPlayer.rate = playWhenReady ? _rate : 0
+        }
     }
 }
 

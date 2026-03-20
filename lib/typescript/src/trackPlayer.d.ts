@@ -266,12 +266,14 @@ export interface SabrDownloadParams {
     cookie?: string;
     /** Video duration in seconds. Converted to duration_ms on the native side. */
     duration?: number;
+    /** Download as WebM/Opus (itag 251) instead of M4A. Enables frame-level duration gating. Default: false. */
+    preferOpus?: boolean;
 }
 /**
  * Downloads a YouTube SABR audio stream to a local file.
  * Emits `sabr-download-progress` events with `{ outputPath, progress }` during download.
- * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie, duration)
- * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A)
+ * @param params  SABR params (sabrServerUrl, sabrUstreamerConfig, sabrFormats, poToken, clientInfo, cookie, duration, preferOpus)
+ * @param outputPath  Destination file path for the downloaded audio (fMP4/M4A or WebM/Opus when preferOpus is true)
  * @returns The output path on success
  */
 export declare function downloadSabr(params: SabrDownloadParams, outputPath: string): Promise<string>;

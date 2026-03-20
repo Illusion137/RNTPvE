@@ -867,6 +867,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         let clientName: Int32? = (clientInfoVal?["clientName"] as? NSNumber).map { Int32($0.intValue) }
         let clientVersion: String? = clientInfoVal?["clientVersion"] as? String
         let durationMs: Double? = (params["duration"] as? Double).map { $0 * 1000 }
+        let preferOpus = params["preferOpus"] as? Bool ?? false
 
         let config = SabrStreamConfig(
             server_abr_streaming_url: serverUrl,
@@ -906,7 +907,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
 
         Task {
             do {
-                _ = try await downloader.download(to: outputURL) { [weak self] fraction in
+                _ = try await downloader.download(to: outputURL, preferOpus: preferOpus) { [weak self] fraction in
                     self?.emit(event: .SabrDownloadProgress, body: [
                         "outputPath": outputPath,
                         "progress": fraction
