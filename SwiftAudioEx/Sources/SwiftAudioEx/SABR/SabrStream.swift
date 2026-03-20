@@ -926,6 +926,23 @@ class SabrStream {
 
         let media_type = get_media_type(initialized_format)
 
+        // Gate: skip segments whose start time falls at or beyond the known stream duration.
+        // AVFoundation's AVAssetResourceLoader does not honour edts/elst edit lists for fMP4
+        // streams; suppressing the silent-tail fragments here is the only reliable cutoff.
+        if segment.media_header.is_init_seg != true,
+           duration_ms < .infinity,
+           let startStr = segment.media_header.start_ms,
+           let segStartMs = Double(startStr),
+           segStartMs >= duration_ms {
+            logger.debug(tag: tag, message: "Skipping \(media_type) segment \(segment.segment_number) (start \(segStartMs)ms ≥ duration \(duration_ms)ms — silent tail)")
+            segment.buffered_chunks = []
+            initialized_format.last_media_headers.append(segment.media_header)
+            initialized_format.downloaded_segments[segment.segment_number] = segment
+            initialized_formats_map[segment.format_id_key] = initialized_format
+            partial_segment_queue.removeValue(forKey: header_id)
+            return
+        }
+
         for chunk in segment.buffered_chunks {
             if media_type == "audio" {
                 audio_continuation?.yield(chunk)
