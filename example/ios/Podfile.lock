@@ -1828,6 +1828,7 @@ PODS:
     - ReactCommon/turbomodule/core
     - SocketRocket
     - SwiftAudioEx
+    - SwiftProtobuf (~> 1.27)
     - Yoga
   - react-native-vector-icons-fontawesome6 (12.0.1)
   - React-NativeModulesApple (0.80.2):
@@ -2483,7 +2484,9 @@ PODS:
     - SocketRocket
     - Yoga
   - SocketRocket (0.7.1)
-  - SwiftAudioEx (1.1.0)
+  - SwiftAudioEx (1.1.0):
+    - SwiftProtobuf (~> 1.27)
+  - SwiftProtobuf (1.36.0)
   - Yoga (0.0.0)
 
 DEPENDENCIES:
@@ -2573,6 +2576,7 @@ DEPENDENCIES:
 SPEC REPOS:
   trunk:
     - SocketRocket
+    - SwiftProtobuf
 
 EXTERNAL SOURCES:
   boost:
@@ -2781,7 +2785,7 @@ SPEC CHECKSUMS:
   react-native-safe-area-context: 3bae4f8474c13ab141c40ed6c5c33f6177778d71
   react-native-segmented-control: bf6e0032726727498e18dd437ae88afcdbc18e99
   react-native-slider: 5f50d2504719d34dee1861c9ac0ff8e2a9d49dfc
-  react-native-track-player: 8b1f42c85df13b8aa8e9848f0186ae525cdd655c
+  react-native-track-player: 21ec46f39b3622fa3f31d3d5219f58fe29fd7886
   react-native-vector-icons-fontawesome6: 624a5578d701e52b18fb7f35b56556395a4249c0
   React-NativeModulesApple: 37c08c3c54db55854de816b0df0f3683832be35a
   React-oscompat: 56d6de59f9ae95cd006a1c40be2cde83bc06a4e1
@@ -2817,7 +2821,8 @@ SPEC CHECKSUMS:
   RNGestureHandler: eeb622199ef1fb3a076243131095df1c797072f0
   RNReanimated: bc1ddb7a5352648bcf0d592256069833bf935a46
   SocketRocket: d4aabe649be1e368d1318fdf28a022d714d65748
-  SwiftAudioEx: f6aa653770f3a0d3851edaf8d834a30aee4a7646
+  SwiftAudioEx: 2d5b6d6afa7a148d1dcde7bfc074158cbd772b3b
+  SwiftProtobuf: 4a92c845d4f5ee640b00f962df11222b625095ed
   Yoga: a742cc68e8366fcfc681808162492bc0aa7a9498
 
 PODFILE CHECKSUM: 8e28e6ce11bc6d183795c849d388c0998a2ec65a
