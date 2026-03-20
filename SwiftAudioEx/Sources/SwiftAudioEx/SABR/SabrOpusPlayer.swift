@@ -1,10 +1,10 @@
 import AVFoundation
-import Opus
+import Copus
 
 /// Plays a YouTube SABR audio stream using the WebM/Opus pipeline.
 ///
 /// Uses `EBMLParser` to extract Opus packets from fWebM chunks, decodes them
-/// with `Opus.Decoder` (libopus via swift-opus), and schedules PCM buffers on
+/// with libopus (via the vendored Copus C target), and schedules PCM buffers on
 /// `AVAudioPlayerNode`. Stops scheduling at the exact Opus frame boundary where
 /// `blockTimestampMs >= durationMs`, eliminating the silent tail that AVFoundation's
 /// fMP4 pipeline cannot suppress.
@@ -169,7 +169,7 @@ class SabrOpusPlayer {
         let ebml = EBMLParser()
 
         var pendingPackets: [OpusPacket] = []
-        var opusDecoder: Opus.Decoder?
+        var opusDecoder: LibOpusDecoder?
         var pcmFormat: AVAudioFormat?
         var preSkipRemaining = 0
         engineStarted = false
@@ -190,17 +190,26 @@ class SabrOpusPlayer {
 
             // Set up decoder once we have stream info
             if opusDecoder == nil, let info = ebml.streamInfo {
-                guard let formats = makeFormats(info: info) else {
-                    log("failed to create audio formats")
+                // Always 48000 Hz — libopus decodes at 48kHz regardless of OpusHead sampleRate.
+                // Stereo uses interleaved layout; mono uses non-interleaved.
+                let channelCount = AVAudioChannelCount(info.channelCount)
+                let interleaved = channelCount > 1
+                guard let fmt = AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32,
+                    sampleRate: 48000,
+                    channels: channelCount,
+                    interleaved: interleaved
+                ) else {
+                    log("failed to create PCM format")
                     let cb = onDidFailPlaying
                     DispatchQueue.main.async { cb?() }
                     return
                 }
-                pcmFormat = formats.pcm
+                pcmFormat = fmt
                 do {
-                    opusDecoder = try Opus.Decoder(format: formats.pcm, application: .audio)
+                    opusDecoder = try LibOpusDecoder(sampleRate: 48000, channels: Int32(info.channelCount))
                 } catch {
-                    log("Opus.Decoder init failed: \(error)")
+                    log("LibOpusDecoder init failed: \(error)")
                     let cb = onDidFailPlaying
                     DispatchQueue.main.async { cb?() }
                     return
@@ -209,7 +218,7 @@ class SabrOpusPlayer {
 
                 // Wire engine with the real PCM format now that we know it
                 engine.disconnectNodeOutput(playerNode)
-                engine.connect(playerNode, to: engine.mainMixerNode, format: formats.pcm)
+                engine.connect(playerNode, to: engine.mainMixerNode, format: fmt)
 
                 if !engineStarted {
                     #if os(iOS) || os(tvOS) || os(watchOS)
@@ -271,7 +280,7 @@ class SabrOpusPlayer {
                     break
                 }
 
-                guard let pcmBuf = decode(
+                guard let pcmBuf = decodePacket(
                     packet: packet,
                     decoder: dec,
                     pcmFormat: pcmFmt,
@@ -388,30 +397,15 @@ class SabrOpusPlayer {
 
     // MARK: - Opus decode
 
-    private struct AudioFormats {
-        let pcm: AVAudioFormat
-    }
-
-    private func makeFormats(info: OpusStreamInfo) -> AudioFormats? {
-        // Always 48000 Hz — libopus decodes at 48kHz regardless of OpusHead sampleRate
-        // swift-opus extension creates interleaved format for stereo
-        guard let pcmFmt = AVAudioFormat(
-            opusPCMFormat: .float32,
-            sampleRate: 48000,
-            channels: AVAudioChannelCount(info.channelCount)
-        ) else { return nil }
-        return AudioFormats(pcm: pcmFmt)
-    }
-
-    private func decode(
+    private func decodePacket(
         packet: OpusPacket,
-        decoder: Opus.Decoder,
+        decoder: LibOpusDecoder,
         pcmFormat: AVAudioFormat,
         preSkipRemaining: inout Int
     ) -> AVAudioPCMBuffer? {
         let pcmBuf: AVAudioPCMBuffer
         do {
-            pcmBuf = try decoder.decode(packet.data)
+            pcmBuf = try decoder.decode(packet.data, format: pcmFormat)
         } catch {
             log("Opus decode error: \(error)")
             return nil
@@ -439,5 +433,56 @@ class SabrOpusPlayer {
             }
         }
         return trimmed
+    }
+}
+
+// MARK: - LibOpusDecoder
+
+/// Minimal libopus decoder wrapper. One instance per stream — do not reuse across streams.
+/// Not thread-safe: only access from the single Task running the pipeline.
+private final class LibOpusDecoder {
+    private let decoder: OpaquePointer
+    private let channels: Int32
+
+    enum DecodeError: Error { case initFailed(Int32), decodeFailed(Int32) }
+
+    init(sampleRate: Int32, channels: Int32) throws {
+        var err: Int32 = OPUS_OK
+        guard let dec = opus_decoder_create(sampleRate, channels, &err), err == OPUS_OK else {
+            throw DecodeError.initFailed(err)
+        }
+        self.decoder = dec
+        self.channels = channels
+    }
+
+    deinit { opus_decoder_destroy(decoder) }
+
+    /// Decode one Opus packet to a float32 PCM buffer using the provided format.
+    func decode(_ data: Data, format: AVAudioFormat) throws -> AVAudioPCMBuffer {
+        try data.withUnsafeBytes { raw in
+            let ptr = raw.bindMemory(to: UInt8.self)
+            let sampleCount = opus_decoder_get_nb_samples(decoder, ptr.baseAddress!, Int32(data.count))
+            if sampleCount < 0 { throw DecodeError.decodeFailed(sampleCount) }
+
+            guard let buf = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(sampleCount)),
+                  let floatData = buf.floatChannelData else {
+                throw DecodeError.decodeFailed(OPUS_INTERNAL_ERROR)
+            }
+
+            // For interleaved stereo, floatChannelData[0] points to the full interleaved buffer.
+            // For mono (non-interleaved), floatChannelData[0] is the single channel.
+            // In both cases, opus_decode_float writes sampleCount * channels floats starting at floatData[0].
+            let decodedFrames = opus_decode_float(
+                decoder,
+                ptr.baseAddress!,
+                Int32(data.count),
+                floatData[0],
+                sampleCount,
+                0
+            )
+            if decodedFrames < 0 { throw DecodeError.decodeFailed(decodedFrames) }
+            buf.frameLength = AVAudioFrameCount(decodedFrames)
+            return buf
+        }
     }
 }

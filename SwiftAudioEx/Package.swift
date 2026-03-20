@@ -11,14 +11,34 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.27.0"),
-        .package(url: "https://github.com/alta/swift-opus.git", from: "0.0.1"),
     ],
     targets: [
+        .target(
+            name: "Copus",
+            path: "Sources/Copus",
+            exclude: [
+                "celt/meson.build",
+                "silk/meson.build",
+                "src/meson.build",
+            ],
+            publicHeadersPath: "include",
+            cSettings: [
+                .headerSearchPath("."),
+                .headerSearchPath("celt"),
+                .headerSearchPath("silk"),
+                .headerSearchPath("silk/float"),
+                .define("OPUS_BUILD"),
+                .define("VAR_ARRAYS", to: "1"),
+                .define("FLOATING_POINT"),
+                .define("HAVE_LRINT", to: "1"),
+                .define("HAVE_LRINTF", to: "1"),
+            ]
+        ),
         .target(
             name: "SwiftAudioEx",
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
-                .product(name: "Opus", package: "swift-opus"),
+                "Copus",
             ]),
         .testTarget(
             name: "SwiftAudioExTests",

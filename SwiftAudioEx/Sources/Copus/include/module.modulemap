@@ -1,0 +1,4 @@
+module Copus {
+    umbrella header "opus.h"
+    export *
+}

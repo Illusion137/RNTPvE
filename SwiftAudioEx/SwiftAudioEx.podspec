@@ -22,6 +22,32 @@ DESC
 
   s.ios.deployment_target = '13.0'
   s.swift_version = '5.5'
-  s.source_files = 'Sources/SwiftAudioEx/**/*'
+
+  # Swift sources + vendored libopus C sources
+  s.source_files = [
+    'Sources/SwiftAudioEx/**/*.swift',
+    'Sources/Copus/**/*.{c,h}',
+  ]
+
+  # Expose only the public opus headers
+  s.public_header_files = 'Sources/Copus/include/*.h'
+
+  # Keep the module map so Swift can `import Copus`
+  s.preserve_paths = 'Sources/Copus/include/module.modulemap'
+
   s.dependency 'SwiftProtobuf', '~> 1.27'
+
+  s.pod_target_xcconfig = {
+    # Internal header search paths for libopus C compilation
+    'HEADER_SEARCH_PATHS' => [
+      '$(PODS_TARGET_SRCROOT)/Sources/Copus',
+      '$(PODS_TARGET_SRCROOT)/Sources/Copus/celt',
+      '$(PODS_TARGET_SRCROOT)/Sources/Copus/silk',
+      '$(PODS_TARGET_SRCROOT)/Sources/Copus/silk/float',
+    ].join(' '),
+    # Build defines required by libopus
+    'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) OPUS_BUILD VAR_ARRAYS=1 FLOATING_POINT HAVE_LRINT=1 HAVE_LRINTF=1',
+    # Let Swift find the Copus module map
+    'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)/Sources/Copus/include',
+  }
 end
