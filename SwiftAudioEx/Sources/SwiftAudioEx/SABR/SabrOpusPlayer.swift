@@ -124,6 +124,8 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("stream error: \(error)")
+                let cb = onDidFinishPlaying
+                DispatchQueue.main.async { cb?() }
             }
         }
     }

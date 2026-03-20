@@ -443,6 +443,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             server_abr_streaming_url: serverUrl,
             video_playback_ustreamer_config: ustreamerConfig,
             po_token: poToken,
+            duration_ms: passedDuration.map { $0 * 1000 },
             formats: formats
         )
 

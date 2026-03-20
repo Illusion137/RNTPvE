@@ -919,9 +919,8 @@ class SabrStream {
            let expected_bytes = Int(cl_str),
            expected_bytes > 0,
            loaded_bytes != expected_bytes {
-            logger.warn(tag: tag, message: "Content length mismatch for segment \(segment.segment_number) (Header ID: \(header_id), key: \(segment.format_id_key), expected: \(expected_bytes), received: \(loaded_bytes))")
-            partial_segment_queue.removeValue(forKey: header_id)
-            return
+            logger.warn(tag: tag, message: "Content length mismatch for segment \(segment.segment_number) (Header ID: \(header_id), key: \(segment.format_id_key), expected: \(expected_bytes), received: \(loaded_bytes)) — continuing with received data")
+            // Continue processing — don't discard received data
         }
 
         guard var initialized_format = initialized_formats_map[segment.format_id_key] else { return }
@@ -1017,7 +1016,6 @@ class SabrStream {
             if !missing_segments.isEmpty {
                 let message = "Format \(format_id_key): Missing segments: [\(missing_segments.map(String.init).joined(separator: ", "))]. Expected range: 0-\(expected_segment_count)."
                 logger.warn(tag: tag, message: message)
-                error_handler(error: NSError(domain: "SabrStream", code: -3, userInfo: [NSLocalizedDescriptionKey: message]), notify_controllers: true)
             } else {
                 logger.debug(tag: tag, message: "Format \(format_id_key): All \(expected_segment_count) segments present (100% coverage)")
             }
@@ -1025,7 +1023,6 @@ class SabrStream {
             if has_duplicates {
                 let message = "Format \(format_id_key): Found duplicate segment numbers (\(segments.count) segments but \(unique_segment_count) unique numbers)"
                 logger.warn(tag: tag, message: message)
-                error_handler(error: NSError(domain: "SabrStream", code: -4, userInfo: [NSLocalizedDescriptionKey: message]), notify_controllers: true)
             }
         }
     }
