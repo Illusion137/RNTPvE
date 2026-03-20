@@ -1,6 +1,4 @@
-import Foundation
 import AVFoundation
-import AudioToolbox
 
 /// Plays a YouTube SABR audio stream using the WebM/Opus pipeline.
 ///
@@ -19,9 +17,7 @@ import AudioToolbox
 /// ```
 class SabrOpusPlayer {
 
-    // Use a private instance logger to avoid name conflict with os.Logger (pulled in by AudioToolbox).
-    private let log = Logger.get_instance()
-    private let tag = "SabrOpusPlayer"
+    private func log(_ message: String) { print("[SabrOpusPlayer] \(message)") }
 
     // MARK: - Public interface (mirrors SabrAudioPlayer)
 
@@ -70,7 +66,7 @@ class SabrOpusPlayer {
                 try await self.runPipeline(audioStream: audio_stream, durationMs: durationMs)
             } catch {
                 guard !Task.isCancelled else { return }
-                log.error(tag: tag, message: "stream error: \(error)")
+                log("stream error: \(error)")
             }
         }
     }
@@ -120,13 +116,13 @@ class SabrOpusPlayer {
             // Set up converter once we have stream info
             if converter == nil, let info = ebml.streamInfo {
                 guard let formats = makeFormats(info: info) else {
-                    log.error(tag: tag, message: "failed to create audio formats")
+                    log("failed to create audio formats")
                     return
                 }
                 opusFormat = formats.opus
                 pcmFormat = formats.pcm
                 guard let conv = AVAudioConverter(from: formats.opus, to: formats.pcm) else {
-                    log.error(tag: tag, message: "AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
+                    log("AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
                     return
                 }
                 converter = conv
@@ -141,7 +137,7 @@ class SabrOpusPlayer {
                         try engine.start()
                         engineStarted = true
                     } catch {
-                        log.error(tag: tag, message: "engine.start() failed: \(error)")
+                        log("engine.start() failed: \(error)")
                         return
                     }
                 }
@@ -162,10 +158,7 @@ class SabrOpusPlayer {
             var gate = false
             for packet in toProcess {
                 if durationMs > 0 && packet.timestampMs >= durationMs {
-                    log.info(
-                        tag: tag,
-                        message: "gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms"
-                    )
+                    log("gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms")
                     gate = true
                     break
                 }
@@ -263,7 +256,7 @@ class SabrOpusPlayer {
         }
 
         if status == .error {
-            log.error(tag: tag, message: "decode error: \(convError?.localizedDescription ?? "unknown")")
+            log("decode error: \(convError?.localizedDescription ?? "unknown")")
             return nil
         }
 
