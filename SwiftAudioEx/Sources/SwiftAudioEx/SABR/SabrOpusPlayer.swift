@@ -19,8 +19,9 @@ import AudioToolbox
 /// ```
 class SabrOpusPlayer {
 
-    private static let logger = Logger.get_instance()
-    private static let tag = "SabrOpusPlayer"
+    // Use a private instance logger to avoid name conflict with os.Logger (pulled in by AudioToolbox).
+    private let log = Logger.get_instance()
+    private let tag = "SabrOpusPlayer"
 
     // MARK: - Public interface (mirrors SabrAudioPlayer)
 
@@ -55,10 +56,10 @@ class SabrOpusPlayer {
         opts.prefer_web_m = true
         opts.prefer_mp4 = nil
 
-        sabrStream.on_stream_protection_status_update { [weak self] status in
+        sabrStream.on_stream_protection_status_update { [weak self] (status: StreamProtectionStatus) in
             if status.status == 2 { self?.onRefreshPoToken?("expired") }
         }
-        sabrStream.on_reload_player_response { [weak self] ctx in
+        sabrStream.on_reload_player_response { [weak self] (ctx: ReloadPlaybackContext) in
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
         }
 
@@ -69,7 +70,7 @@ class SabrOpusPlayer {
                 try await self.runPipeline(audioStream: audio_stream, durationMs: durationMs)
             } catch {
                 guard !Task.isCancelled else { return }
-                Self.logger.error(tag: Self.tag, message: "stream error: \(error)")
+                log.error(tag: tag, message: "stream error: \(error)")
             }
         }
     }
@@ -119,13 +120,13 @@ class SabrOpusPlayer {
             // Set up converter once we have stream info
             if converter == nil, let info = ebml.streamInfo {
                 guard let formats = makeFormats(info: info) else {
-                    Self.logger.error(tag: Self.tag, message: "failed to create audio formats")
+                    log.error(tag: tag, message: "failed to create audio formats")
                     return
                 }
                 opusFormat = formats.opus
                 pcmFormat = formats.pcm
                 guard let conv = AVAudioConverter(from: formats.opus, to: formats.pcm) else {
-                    Self.logger.error(tag: Self.tag, message: "AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
+                    log.error(tag: tag, message: "AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
                     return
                 }
                 converter = conv
@@ -140,7 +141,7 @@ class SabrOpusPlayer {
                         try engine.start()
                         engineStarted = true
                     } catch {
-                        Self.logger.error(tag: Self.tag, message: "engine.start() failed: \(error)")
+                        log.error(tag: tag, message: "engine.start() failed: \(error)")
                         return
                     }
                 }
@@ -161,8 +162,8 @@ class SabrOpusPlayer {
             var gate = false
             for packet in toProcess {
                 if durationMs > 0 && packet.timestampMs >= durationMs {
-                    Self.logger.info(
-                        tag: Self.tag,
+                    log.info(
+                        tag: tag,
                         message: "gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms"
                     )
                     gate = true
@@ -262,7 +263,7 @@ class SabrOpusPlayer {
         }
 
         if status == .error {
-            Self.logger.error(tag: Self.tag, message: "decode error: \(convError?.localizedDescription ?? "unknown")")
+            log.error(tag: tag, message: "decode error: \(convError?.localizedDescription ?? "unknown")")
             return nil
         }
 
