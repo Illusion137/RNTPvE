@@ -194,12 +194,16 @@ class SabrOpusPlayer {
             if converter == nil, let info = ebml.streamInfo {
                 guard let formats = makeFormats(info: info) else {
                     log("failed to create audio formats")
+                    let cb = onDidFailPlaying
+                    DispatchQueue.main.async { cb?() }
                     return
                 }
                 opusFormat = formats.opus
                 pcmFormat = formats.pcm
                 guard let conv = AVAudioConverter(from: formats.opus, to: formats.pcm) else {
                     log("AVAudioConverter init failed (kAudioFormatOpus unavailable?)")
+                    let cb = onDidFailPlaying
+                    DispatchQueue.main.async { cb?() }
                     return
                 }
                 converter = conv
@@ -236,13 +240,13 @@ class SabrOpusPlayer {
                             DispatchQueue.main.async { engineCb?() }
                         } catch let retryError {
                             log("engine.start() failed after retry: \(retryError)")
-                            let cb = onDidFinishPlaying
+                            let cb = onDidFailPlaying
                             DispatchQueue.main.async { cb?() }
                             return
                         }
                         #else
                         log("engine.start() failed: \(error)")
-                        let cb = onDidFinishPlaying
+                        let cb = onDidFailPlaying
                         DispatchQueue.main.async { cb?() }
                         return
                         #endif

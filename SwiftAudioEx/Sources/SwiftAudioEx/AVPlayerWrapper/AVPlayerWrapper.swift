@@ -273,17 +273,17 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 return
             }
 
-            // Local WebM/Opus files (AVPlayer doesn't support .webm natively)
-            let isExplicitOpus = urlOptions?["isOpus"] as? Bool == true
-            let ext = url.pathExtension.lowercased()
-            let hasOpusExtension = ["webm", "opus"].contains(ext)
-            // url.scheme == nil covers plain absolute paths like /var/mobile/...
-            let isLocalOpusFile = (url.isFileURL || url.scheme == nil) && hasOpusExtension
-            if isExplicitOpus || isLocalOpusFile {
-                // Normalise to a proper file URL so FileHandle can open it
-                let fileUrl = url.isFileURL ? url : URL(fileURLWithPath: url.path)
-                loadOpusFile(url: fileUrl)
-                return
+            // Local WebM/Opus files (AVPlayer doesn't support .webm natively).
+            // Detection priority: explicit flag → known extension → EBML magic bytes.
+            // Magic byte detection catches files saved with any extension (or none).
+            if url.isFileURL {
+                let isExplicit = urlOptions?["isOpus"] as? Bool == true
+                let ext = url.pathExtension.lowercased()
+                let knownExt = ["webm", "opus"].contains(ext)
+                if isExplicit || knownExt || AVPlayerWrapper.isWebMFile(url) {
+                    loadOpusFile(url: url)
+                    return
+                }
             }
 
             // AVURLAsset supporting streaming (HLS) and progressive download.
@@ -535,6 +535,17 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     // MARK: - Util
+
+    /// Returns true if the file at `url` starts with the EBML magic bytes (1A 45 DF A3),
+    /// identifying it as a WebM/MKV container regardless of file extension.
+    private static func isWebMFile(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        let header = handle.readData(ofLength: 4)
+        return header.count == 4 &&
+               header[0] == 0x1A && header[1] == 0x45 &&
+               header[2] == 0xDF && header[3] == 0xA3
+    }
 
     private func clearCurrentItem() {
         sabrOpusPlayer?.cancel()
