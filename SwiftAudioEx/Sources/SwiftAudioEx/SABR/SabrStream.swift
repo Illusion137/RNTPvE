@@ -308,7 +308,6 @@ class SabrStream {
 
                 if stall_check.should_stop { break }
 
-                let time_before_fetch = abr_state.player_time_ms
                 let success = await execute_with_retry(max_retries: max_retries) {
                     try await self.fetch_and_process_segments(
                         abr_state: abr_state,
@@ -318,11 +317,6 @@ class SabrStream {
                 }
 
                 if !success { break }
-
-                // If a successful fetch made no progress (no new segments) and we already have
-                // some data, all content has been downloaded — covers the duration_ms = .infinity case.
-                let time_after_fetch = main_format.map { get_total_downloaded_duration($0) } ?? 0
-                if time_after_fetch > 0 && time_after_fetch <= time_before_fetch { break }
             }
         } catch {
             if !_aborted {
