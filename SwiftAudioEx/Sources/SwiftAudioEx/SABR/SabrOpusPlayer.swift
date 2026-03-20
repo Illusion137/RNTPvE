@@ -259,6 +259,7 @@ class SabrOpusPlayer {
             }
 
             var gate = false
+            var chunkFrames: [AVAudioPCMBuffer] = []
             for packet in toProcess {
                 if durationMs > 0 && packet.timestampMs >= durationMs {
                     log("gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms")
@@ -274,7 +275,13 @@ class SabrOpusPlayer {
                     preSkipRemaining: &preSkipRemaining
                 ) else { continue }
 
-                playerNode.scheduleBuffer(pcmBuf, completionHandler: nil)
+                chunkFrames.append(pcmBuf)
+            }
+
+            // Coalesce all decoded frames into one buffer per chunk to reduce the number of
+            // scheduleBuffer() calls, which otherwise overwhelms the CoreAudio render thread.
+            if let coalesced = coalescePCM(chunkFrames, format: pcmFmt) {
+                playerNode.scheduleBuffer(coalesced, completionHandler: nil)
             }
 
             // Start playing as soon as we've scheduled the first chunk of audio —
@@ -337,6 +344,32 @@ class SabrOpusPlayer {
                 }
             }
         }
+    }
+
+    // MARK: - PCM coalescing
+
+    /// Concatenates an array of PCM buffers into a single buffer.
+    /// Reduces the number of `scheduleBuffer` calls, which otherwise causes CoreAudio render
+    /// thread overload (`HALC_ProxyIOContext::IOWorkLoop: skipping cycle due to overload`).
+    private func coalescePCM(_ buffers: [AVAudioPCMBuffer], format: AVAudioFormat) -> AVAudioPCMBuffer? {
+        let totalFrames = buffers.reduce(0) { $0 + AVAudioFrameCount($1.frameLength) }
+        guard totalFrames > 0,
+              let result = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: totalFrames) else {
+            return nil
+        }
+        result.frameLength = totalFrames
+        var offset = 0
+        let channelCount = Int(format.channelCount)
+        for buf in buffers {
+            let len = Int(buf.frameLength)
+            for ch in 0..<channelCount {
+                guard let src = buf.floatChannelData?[ch],
+                      let dst = result.floatChannelData?[ch] else { continue }
+                dst.advanced(by: offset).update(from: src, count: len)
+            }
+            offset += len
+        }
+        return result
     }
 
     // MARK: - Opus decode
