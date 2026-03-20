@@ -389,10 +389,20 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     ) {
         self.sourceType = type
         self.passedDuration = duration
-        if let itemUrl = type == .file
-            ? URL(fileURLWithPath: url)
-            : URL(string: url)
-        {
+
+        let itemUrl: URL?
+        if type == .file {
+            // Accept both absolute paths ("/var/...") and file URLs ("file:///var/...")
+            if let parsed = URL(string: url), parsed.isFileURL {
+                itemUrl = parsed
+            } else {
+                itemUrl = URL(fileURLWithPath: url)
+            }
+        } else {
+            itemUrl = URL(string: url)
+        }
+
+        if let itemUrl {
             self.load(from: itemUrl, playWhenReady: playWhenReady, options: options)
             if let initialTime = initialTime {
                 self.seek(to: initialTime)

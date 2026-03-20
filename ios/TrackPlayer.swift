@@ -913,11 +913,16 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
                         "progress": fraction
                     ])
                 }
-                self.sabrDownloaders.removeValue(forKey: outputPath)
-                resolve(outputPath)
+
+                await MainActor.run {
+                    self.sabrDownloaders.removeValue(forKey: outputPath)
+                    resolve(outputPath)
+                }
             } catch {
-                self.sabrDownloaders.removeValue(forKey: outputPath)
-                reject("E_SABR_DOWNLOAD", error.localizedDescription, error)
+                await MainActor.run {
+                    self.sabrDownloaders.removeValue(forKey: outputPath)
+                    reject("E_SABR_DOWNLOAD", error.localizedDescription, error)
+                }
             }
         }
     }
