@@ -1,5 +1,9 @@
 import AVFoundation
+// In SPM builds, libopus lives in the separate Copus module; import it explicitly.
+// In CocoaPods builds, the C symbols are bridged via the pod's umbrella header automatically.
+#if canImport(Copus)
 import Copus
+#endif
 
 /// Plays a YouTube SABR audio stream using the WebM/Opus pipeline.
 ///
@@ -191,14 +195,13 @@ class SabrOpusPlayer {
             // Set up decoder once we have stream info
             if opusDecoder == nil, let info = ebml.streamInfo {
                 // Always 48000 Hz — libopus decodes at 48kHz regardless of OpusHead sampleRate.
-                // Stereo uses interleaved layout; mono uses non-interleaved.
+                // Non-interleaved is required by AVAudioPlayerNode (interleaved crashes with -10868).
                 let channelCount = AVAudioChannelCount(info.channelCount)
-                let interleaved = channelCount > 1
                 guard let fmt = AVAudioFormat(
                     commonFormat: .pcmFormatFloat32,
                     sampleRate: 48000,
                     channels: channelCount,
-                    interleaved: interleaved
+                    interleaved: false
                 ) else {
                     log("failed to create PCM format")
                     let cb = onDidFailPlaying
@@ -371,26 +374,16 @@ class SabrOpusPlayer {
         }
         result.frameLength = totalFrames
 
+        // Format is always non-interleaved (AVAudioPlayerNode requires it).
         let channelCount = Int(format.channelCount)
-        if format.isInterleaved && channelCount > 1 {
-            guard let dst = result.floatChannelData?[0] else { return nil }
-            var dstOffset = 0
-            for buf in buffers {
-                let copyCount = Int(buf.frameLength) * channelCount
-                guard let src = buf.floatChannelData?[0] else { continue }
-                dst.advanced(by: dstOffset).update(from: src, count: copyCount)
-                dstOffset += copyCount
+        var frameOffset = 0
+        for buf in buffers {
+            let len = Int(buf.frameLength)
+            for ch in 0..<channelCount {
+                guard let src = buf.floatChannelData?[ch], let dst = result.floatChannelData?[ch] else { continue }
+                dst.advanced(by: frameOffset).update(from: src, count: len)
             }
-        } else {
-            var frameOffset = 0
-            for buf in buffers {
-                let len = Int(buf.frameLength)
-                for ch in 0..<channelCount {
-                    guard let src = buf.floatChannelData?[ch], let dst = result.floatChannelData?[ch] else { continue }
-                    dst.advanced(by: frameOffset).update(from: src, count: len)
-                }
-                frameOffset += len
-            }
+            frameOffset += len
         }
         return result
     }
@@ -422,15 +415,11 @@ class SabrOpusPlayer {
         guard let trimmed = AVAudioPCMBuffer(pcmFormat: pcmFormat, frameCapacity: AVAudioFrameCount(remaining)) else { return nil }
         trimmed.frameLength = AVAudioFrameCount(remaining)
 
+        // Format is always non-interleaved; copy each channel past the skipped frames.
         let channelCount = Int(pcmFormat.channelCount)
-        if pcmFormat.isInterleaved && channelCount > 1 {
-            guard let src = pcmBuf.floatChannelData?[0], let dst = trimmed.floatChannelData?[0] else { return nil }
-            dst.update(from: src.advanced(by: skip * channelCount), count: remaining * channelCount)
-        } else {
-            for ch in 0..<channelCount {
-                guard let src = pcmBuf.floatChannelData?[ch], let dst = trimmed.floatChannelData?[ch] else { continue }
-                dst.update(from: src.advanced(by: skip), count: remaining)
-            }
+        for ch in 0..<channelCount {
+            guard let src = pcmBuf.floatChannelData?[ch], let dst = trimmed.floatChannelData?[ch] else { continue }
+            dst.update(from: src.advanced(by: skip), count: remaining)
         }
         return trimmed
     }
@@ -457,7 +446,11 @@ private final class LibOpusDecoder {
 
     deinit { opus_decoder_destroy(decoder) }
 
-    /// Decode one Opus packet to a float32 PCM buffer using the provided format.
+    /// Decode one Opus packet into a non-interleaved float32 `AVAudioPCMBuffer`.
+    ///
+    /// `opus_decode_float` always writes interleaved output (LRLRLR… for stereo).
+    /// For stereo we decode into a temporary flat array and then deinterleave into
+    /// the separate channel pointers that `AVAudioPlayerNode` requires.
     func decode(_ data: Data, format: AVAudioFormat) throws -> AVAudioPCMBuffer {
         try data.withUnsafeBytes { raw in
             let ptr = raw.bindMemory(to: UInt8.self)
@@ -469,17 +462,33 @@ private final class LibOpusDecoder {
                 throw DecodeError.decodeFailed(OPUS_INTERNAL_ERROR)
             }
 
-            // For interleaved stereo, floatChannelData[0] points to the full interleaved buffer.
-            // For mono (non-interleaved), floatChannelData[0] is the single channel.
-            // In both cases, opus_decode_float writes sampleCount * channels floats starting at floatData[0].
-            let decodedFrames = opus_decode_float(
-                decoder,
-                ptr.baseAddress!,
-                Int32(data.count),
-                floatData[0],
-                sampleCount,
-                0
-            )
+            let decodedFrames: Int32
+            if channels == 1 {
+                // Mono: opus_decode_float writes a single non-interleaved channel; decode directly.
+                decodedFrames = opus_decode_float(
+                    decoder, ptr.baseAddress!, Int32(data.count),
+                    floatData[0], sampleCount, 0
+                )
+            } else {
+                // Stereo: opus_decode_float writes interleaved LRLRLR… into a flat array.
+                // Decode into a temporary buffer, then split into the two channel arrays.
+                var interleaved = [Float](repeating: 0, count: Int(sampleCount) * Int(channels))
+                decodedFrames = interleaved.withUnsafeMutableBufferPointer { tmp in
+                    opus_decode_float(
+                        decoder, ptr.baseAddress!, Int32(data.count),
+                        tmp.baseAddress!, sampleCount, 0
+                    )
+                }
+                if decodedFrames > 0 {
+                    let n = Int(decodedFrames)
+                    let ch = Int(channels)
+                    for c in 0..<ch {
+                        let dst = floatData[c]
+                        for f in 0..<n { dst[f] = interleaved[f * ch + c] }
+                    }
+                }
+            }
+
             if decodedFrames < 0 { throw DecodeError.decodeFailed(decodedFrames) }
             buf.frameLength = AVAudioFrameCount(decodedFrames)
             return buf

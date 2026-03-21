@@ -38,6 +38,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     private var opusPlayStartDate: Date? = nil
     /// Wall-clock time when opus was paused (nil when not paused).
     private var opusPausedAt: Date? = nil
+    /// Periodic timer that drives secondsElapsed callbacks for the Opus path.
+    private var opusTimer: Timer? = nil
     fileprivate var passedDuration: TimeInterval?
     fileprivate var sourceType: SourceType?
 
@@ -103,6 +105,12 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             }
 
             applyAVPlayerRate()
+
+            // Sync state for Opus path (avPlayer status changes are ignored for this path).
+            if sabrOpusPlayer != nil, opusPlayStartDate != nil, oldValue != playWhenReady {
+                state = playWhenReady ? .playing : .paused
+                if playWhenReady { startOpusTimer() } else { stopOpusTimer() }
+            }
 
             if oldValue != playWhenReady {
                 delegate?.AVWrapper(didChangePlayWhenReady: playWhenReady)
@@ -180,6 +188,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     var timeEventFrequency: TimeEventFrequency = .everySecond {
         didSet {
             playerTimeObserver.periodicObserverTimeInterval = timeEventFrequency.getTime()
+            if opusTimer != nil { startOpusTimer() }  // restart with new interval
         }
     }
 
@@ -481,16 +490,19 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             guard let self, self.sabrOpusPlayer === player else { return }
             self.opusPlayStartDate = Date()
             self.state = .playing
+            self.startOpusTimer()
         }
 
         player.onDidFinishPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
+            self.stopOpusTimer()
             self.state = .ended
             self.delegate?.AVWrapperItemDidPlayToEndTime()
         }
 
         player.onDidFailPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
+            self.stopOpusTimer()
             self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
         }
 
@@ -514,14 +526,17 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             guard let self, self.sabrOpusPlayer === player else { return }
             self.opusPlayStartDate = Date()
             self.state = .playing
+            self.startOpusTimer()
         }
         player.onDidFinishPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
+            self.stopOpusTimer()
             self.state = .ended
             self.delegate?.AVWrapperItemDidPlayToEndTime()
         }
         player.onDidFailPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
+            self.stopOpusTimer()
             self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
         }
         player.onEngineStarted = { [weak self] in
@@ -547,7 +562,22 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                header[2] == 0xDF && header[3] == 0xA3
     }
 
+    private func startOpusTimer() {
+        opusTimer?.invalidate()
+        let interval = timeEventFrequency.getTime().seconds
+        opusTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            self.delegate?.AVWrapper(secondsElapsed: self.currentTime)
+        }
+    }
+
+    private func stopOpusTimer() {
+        opusTimer?.invalidate()
+        opusTimer = nil
+    }
+
     private func clearCurrentItem() {
+        stopOpusTimer()
         sabrOpusPlayer?.cancel()
         sabrOpusPlayer = nil
         opusPlayStartDate = nil
@@ -634,6 +664,8 @@ extension AVPlayerWrapper: AVPlayerObserverDelegate {
     // MARK: - AVPlayerObserverDelegate
 
     func player(didChangeTimeControlStatus status: AVPlayer.TimeControlStatus) {
+        // Opus path uses SabrOpusPlayer — avPlayer has no item, so its status changes are irrelevant.
+        guard sabrOpusPlayer == nil else { return }
         switch status {
         case .paused:
             let state = self.state

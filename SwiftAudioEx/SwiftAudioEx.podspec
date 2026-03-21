@@ -23,22 +23,22 @@ DESC
   s.ios.deployment_target = '13.0'
   s.swift_version = '5.5'
 
-  # Swift sources + vendored libopus C sources
+  # Swift sources + vendored libopus C sources.
+  # In CocoaPods, the C symbols (opus_decoder_create etc.) are bridged to Swift automatically
+  # via the pod's generated umbrella header — no explicit `import Copus` needed.
   s.source_files = [
     'Sources/SwiftAudioEx/**/*.swift',
     'Sources/Copus/**/*.{c,h}',
   ]
 
-  # Expose only the public opus headers
+  # Public opus headers — included in the pod umbrella header, making C symbols
+  # directly accessible to Swift without a separate module import.
   s.public_header_files = 'Sources/Copus/include/*.h'
-
-  # Keep the module map so Swift can `import Copus`
-  s.preserve_paths = 'Sources/Copus/include/module.modulemap'
 
   s.dependency 'SwiftProtobuf', '~> 1.27'
 
   s.pod_target_xcconfig = {
-    # Internal header search paths for libopus C compilation
+    # Internal header search paths required by libopus C files
     'HEADER_SEARCH_PATHS' => [
       '$(PODS_TARGET_SRCROOT)/Sources/Copus',
       '$(PODS_TARGET_SRCROOT)/Sources/Copus/celt',
@@ -47,7 +47,5 @@ DESC
     ].join(' '),
     # Build defines required by libopus
     'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) OPUS_BUILD VAR_ARRAYS=1 FLOATING_POINT HAVE_LRINT=1 HAVE_LRINTF=1',
-    # Let Swift find the Copus module map
-    'SWIFT_INCLUDE_PATHS' => '$(PODS_TARGET_SRCROOT)/Sources/Copus/include',
   }
 end
