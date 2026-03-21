@@ -251,9 +251,13 @@ class SabrOpusPlayer {
                 }
                 preSkipRemaining = info.preSkip
 
-                // Wire engine with the real PCM format now that we know it
+                // Wire engine with the real PCM format now that we know it.
+                // Both legs of the chain must be reconnected with the concrete format;
+                // leaving eqNode→mainMixerNode on the nil/default format causes -10868.
                 engine.disconnectNodeOutput(playerNode)
+                engine.disconnectNodeOutput(eqNode)
                 engine.connect(playerNode, to: eqNode, format: fmt)
+                engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
 
                 if !engineStarted {
                     #if os(iOS) || os(tvOS) || os(watchOS)

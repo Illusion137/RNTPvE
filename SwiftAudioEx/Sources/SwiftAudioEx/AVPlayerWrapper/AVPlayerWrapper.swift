@@ -268,11 +268,15 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 return
             }
             let clamped = max(0, min(seconds, duration))
-            if opusPausedAt != nil {
-                opusPausedAt = Date()
-                opusPlayStartDate = opusPausedAt!.addingTimeInterval(-clamped)
+            if let pausedAt = opusPausedAt {
+                // Paused: keep the pause anchor; shift start so currentTime == clamped
+                opusPlayStartDate = pausedAt.addingTimeInterval(-clamped)
             } else if opusPlayStartDate != nil {
+                // Playing: shift start relative to now
                 opusPlayStartDate = Date().addingTimeInterval(-clamped)
+            } else {
+                // Still loading (onDidStartPlaying hasn't fired yet): defer
+                timeToSeekToAfterLoading = clamped
             }
             delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             return
@@ -542,9 +546,19 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.opusPlayStartDate = Date()
-            self.state = .playing
-            self.startOpusTimer()
+            // Use opusPausedAt as the reference if applyAVPlayerRate already paused
+            // the node (e.g. playWhenReady was false when onEngineStarted fired).
+            // Using Date() in that case would set opusPlayStartDate *after* opusPausedAt,
+            // making currentTime return a negative value.
+            let ref = self.opusPausedAt ?? Date()
+            if let initialTime = self.timeToSeekToAfterLoading {
+                self.timeToSeekToAfterLoading = nil
+                self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
+            } else {
+                self.opusPlayStartDate = ref
+            }
+            self.state = self.playWhenReady ? .playing : .paused
+            if self.playWhenReady { self.startOpusTimer() }
         }
 
         player.onDidFinishPlaying = { [weak self] in
@@ -585,9 +599,19 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.opusPlayStartDate = Date()
-            self.state = .playing
-            self.startOpusTimer()
+            // Use opusPausedAt as the reference if applyAVPlayerRate already paused
+            // the node (e.g. playWhenReady was false when onEngineStarted fired).
+            // Using Date() in that case would set opusPlayStartDate *after* opusPausedAt,
+            // making currentTime return a negative value.
+            let ref = self.opusPausedAt ?? Date()
+            if let initialTime = self.timeToSeekToAfterLoading {
+                self.timeToSeekToAfterLoading = nil
+                self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
+            } else {
+                self.opusPlayStartDate = ref
+            }
+            self.state = self.playWhenReady ? .playing : .paused
+            if self.playWhenReady { self.startOpusTimer() }
         }
         player.onDidFinishPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }

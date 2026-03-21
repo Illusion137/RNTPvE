@@ -418,7 +418,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         if (rejectWhenNotInitialized(reject: reject)) { return }
 
         print("Skipping to track:", trackIndex)
-        try? player.jumpToItem(atIndex: trackIndex, playWhenReady: player.playerState == .playing)
+        try? player.jumpToItem(atIndex: trackIndex, playWhenReady: player.playWhenReady)
 
         // if an initialTime is passed the seek to it
         if (initialTime >= 0) {
