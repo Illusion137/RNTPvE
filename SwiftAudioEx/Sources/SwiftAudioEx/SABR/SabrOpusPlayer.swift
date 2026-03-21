@@ -43,12 +43,16 @@ class SabrOpusPlayer {
 
     // MARK: - Private state
 
-    private let sabrStream: SabrStream?
+    let sabrStream: SabrStream?
     private var streamTask: Task<Void, Never>?
     private var isCancelled = false
     private var engineStarted = false
     private var interruptionObserver: Any?
     private var engineConfigObserver: Any?
+
+    // File-mode seek state
+    private var currentFileURL: URL? = nil
+    private var currentFileDurationMs: Double = 0
 
     // MARK: - Init
 
@@ -148,7 +152,11 @@ class SabrOpusPlayer {
         opts.prefer_mp4 = nil
 
         sabrStream?.on_stream_protection_status_update { [weak self] (status: StreamProtectionStatus) in
-            if status.status == 2 { self?.onRefreshPoToken?("expired") }
+            switch status.status {
+            case 1: self?.onRefreshPoToken?("placeholder_needed")
+            case 2: self?.onRefreshPoToken?("expired")
+            default: break
+            }
         }
         sabrStream?.on_reload_player_response { [weak self] (ctx: ReloadPlaybackContext) in
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
@@ -168,7 +176,45 @@ class SabrOpusPlayer {
         }
     }
 
+    func prepareAudioSession() {
+        #if os(iOS) || os(tvOS) || os(watchOS)
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default)
+        try? session.setActive(true)
+        #endif
+    }
+
+    func seek(to timeMs: Double) {
+        guard sabrStream == nil, let url = currentFileURL else { return }
+        let clampedMs = max(0, min(timeMs, currentFileDurationMs))
+        isCancelled = false
+        streamTask?.cancel()
+        playerNode.stop()
+        if engine.isRunning { engine.stop() }
+        engineStarted = false
+        engine.disconnectNodeOutput(playerNode)
+        engine.disconnectNodeOutput(eqNode)
+        engine.connect(playerNode, to: eqNode, format: nil)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        streamTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await self.runPipeline(
+                    audioStream: makeFileStream(url: url),
+                    durationMs: currentFileDurationMs,
+                    startTimeMs: clampedMs
+                )
+            } catch {
+                guard !Task.isCancelled else { return }
+                let cb = onDidFailPlaying
+                DispatchQueue.main.async { cb?() }
+            }
+        }
+    }
+
     func startFile(url: URL, durationMs: Double = 0) {
+        currentFileURL = url
+        currentFileDurationMs = durationMs
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
@@ -199,7 +245,8 @@ class SabrOpusPlayer {
 
     private func runPipeline(
         audioStream: AsyncThrowingStream<Data, Error>,
-        durationMs: Double
+        durationMs: Double,
+        startTimeMs: Double = 0
     ) async throws {
         let ebml = EBMLParser()
 
@@ -260,16 +307,6 @@ class SabrOpusPlayer {
                 engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
 
                 if !engineStarted {
-                    #if os(iOS) || os(tvOS) || os(watchOS)
-                    do {
-                        let session = AVAudioSession.sharedInstance()
-                        try session.setCategory(.playback, mode: .default)
-                        try session.setActive(true)
-                    } catch {
-                        log("AVAudioSession setup failed (non-fatal): \(error)")
-                        // continue — engine.start() may still succeed
-                    }
-                    #endif
                     do {
                         try engine.start()
                         engineStarted = true
@@ -318,6 +355,8 @@ class SabrOpusPlayer {
                     gate = true
                     break
                 }
+
+                if startTimeMs > 0 && packet.timestampMs < startTimeMs { continue }
 
                 guard let pcmBuf = decodePacket(
                     packet: packet,

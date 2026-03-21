@@ -952,6 +952,17 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         resolve(NSNull())
     }
 
+    @objc(updatePlaybackPoToken:resolver:rejecter:)
+    public func updatePlaybackPoToken(
+        poToken: String,
+        resolve: RCTPromiseResolveBlock,
+        reject: RCTPromiseRejectBlock
+    ) {
+        if rejectWhenNotInitialized(reject: reject) { return }
+        player.updateSabrStreamPoToken(poToken)
+        resolve(NSNull())
+    }
+
     @objc(updateSabrPoToken:poToken:resolver:rejecter:)
     public func updateSabrPoToken(
         outputPath: String,

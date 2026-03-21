@@ -418,4 +418,8 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
     public func isEqualizerActive() -> Bool {
         return avPlayerWrapper.isEqualizerEnabled()
     }
+
+    public func updateSabrStreamPoToken(_ poToken: String) {
+        avPlayerWrapper.updateSabrStreamPoToken(poToken)
+    }
 }

@@ -262,23 +262,32 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     func seek(to seconds: TimeInterval) {
-        if sabrOpusPlayer != nil {
+        if let opus = sabrOpusPlayer {
             guard Thread.isMainThread else {
                 DispatchQueue.main.async { [weak self] in self?.seek(to: seconds) }
                 return
             }
             let clamped = max(0, min(seconds, duration))
-            if let pausedAt = opusPausedAt {
-                // Paused: keep the pause anchor; shift start so currentTime == clamped
-                opusPlayStartDate = pausedAt.addingTimeInterval(-clamped)
-            } else if opusPlayStartDate != nil {
-                // Playing: shift start relative to now
-                opusPlayStartDate = Date().addingTimeInterval(-clamped)
-            } else {
-                // Still loading (onDidStartPlaying hasn't fired yet): defer
+            if opus.sabrStream == nil {
+                // File mode: real pipeline restart from seek target
                 timeToSeekToAfterLoading = clamped
+                opusPlayStartDate = nil
+                opusPausedAt = nil
+                stopOpusTimer()
+                state = .loading
+                opus.seek(to: clamped * 1000)
+                delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
+            } else {
+                // Stream mode: wall-clock adjustment only
+                if let pausedAt = opusPausedAt {
+                    opusPlayStartDate = pausedAt.addingTimeInterval(-clamped)
+                } else if opusPlayStartDate != nil {
+                    opusPlayStartDate = Date().addingTimeInterval(-clamped)
+                } else {
+                    timeToSeekToAfterLoading = clamped
+                }
+                delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             }
-            delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             return
         }
         // if the player is loading then we need to defer seeking until it's ready.
@@ -586,6 +595,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         let durationMs = (passedDuration ?? 0) * 1000
         let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
+        player.prepareAudioSession()
         player.start(options: playbackOptions, durationMs: durationMs)
     }
 
@@ -634,6 +644,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             delegate?.AVWrapper(didUpdateDuration: d)
         }
         let durationMs = (passedDuration ?? 0) * 1000
+        player.prepareAudioSession()
         player.startFile(url: url, durationMs: durationMs)
     }
 
@@ -868,10 +879,17 @@ extension AVPlayerWrapper {
         }
     }
 
+    func updateSabrStreamPoToken(_ poToken: String) {
+        sabrOpusPlayer?.updatePoToken(poToken)
+    }
+
     /// Set equalizer bands (gain in dB, -24 to +24)
     func setEqualizerBands(_ bands: [Float]) {
         audioTapProcessor.setEQBands(bands)
         sabrOpusPlayer?.setEQBands(bands)
+        if bands.contains(where: { $0 != 0 }) {
+            sabrOpusPlayer?.setEQEnabled(true)
+        }
     }
 
     /// Get current equalizer bands
