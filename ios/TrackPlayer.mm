@@ -206,7 +206,7 @@ RCT_EXPORT_MODULE()
 }
 
 - (void)updatePlaybackPoToken:(nonnull NSString *)poToken resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
-  [nativeTrackPlayer updatePlaybackPoTokenWithPoToken:poToken resolver:resolve rejecter:reject];
+  [nativeTrackPlayer updatePlaybackPoToken:poToken resolver:resolve rejecter:reject];
 }
 
 // event listeners
