@@ -49,6 +49,9 @@ class SabrOpusPlayer {
     private var engineStarted = false
     private var interruptionObserver: Any?
     private var engineConfigObserver: Any?
+    /// Monotonically incremented each time a new pipeline starts or the player is cancelled.
+    /// Captured by sentinel completion callbacks to detect stale callbacks from old pipelines.
+    private var pipelineGeneration = 0
 
     // File-mode seek state
     private var currentFileURL: URL? = nil
@@ -145,11 +148,12 @@ class SabrOpusPlayer {
 
     // MARK: - Start
 
-    func start(options: SabrPlaybackOptions, durationMs: Double = 0) {
+    func start(options: SabrPlaybackOptions, durationMs: Double = 0, startTimeMs: Double = 0) {
         var opts = options
         opts.prefer_opus = true
         opts.prefer_web_m = true
         opts.prefer_mp4 = nil
+        if startTimeMs > 0 { opts.start_time_ms = startTimeMs }
 
         sabrStream?.on_stream_protection_status_update { [weak self] (status: StreamProtectionStatus) in
             switch status.status {
@@ -162,11 +166,13 @@ class SabrOpusPlayer {
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
         }
 
+        pipelineGeneration += 1
+        let gen = pipelineGeneration
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
                 let (_, audio_stream, _) = try await sabrStream!.start(options: opts)
-                try await self.runPipeline(audioStream: audio_stream, durationMs: durationMs)
+                try await self.runPipeline(audioStream: audio_stream, durationMs: durationMs, startTimeMs: startTimeMs, generation: gen)
             } catch {
                 guard !Task.isCancelled else { return }
                 log("stream error: \(error)")
@@ -187,6 +193,8 @@ class SabrOpusPlayer {
     func seek(to timeMs: Double) {
         guard sabrStream == nil, let url = currentFileURL else { return }
         let clampedMs = max(0, min(timeMs, currentFileDurationMs))
+        pipelineGeneration += 1
+        let gen = pipelineGeneration
         isCancelled = false
         streamTask?.cancel()
         playerNode.stop()
@@ -202,7 +210,8 @@ class SabrOpusPlayer {
                 try await self.runPipeline(
                     audioStream: makeFileStream(url: url),
                     durationMs: currentFileDurationMs,
-                    startTimeMs: clampedMs
+                    startTimeMs: clampedMs,
+                    generation: gen
                 )
             } catch {
                 guard !Task.isCancelled else { return }
@@ -215,10 +224,12 @@ class SabrOpusPlayer {
     func startFile(url: URL, durationMs: Double = 0) {
         currentFileURL = url
         currentFileDurationMs = durationMs
+        pipelineGeneration += 1
+        let gen = pipelineGeneration
         streamTask = Task { [weak self] in
             guard let self else { return }
             do {
-                try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs)
+                try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs, generation: gen)
             } catch {
                 guard !Task.isCancelled else { return }
                 log("file playback error: \(error)")
@@ -229,6 +240,7 @@ class SabrOpusPlayer {
     }
 
     func cancel() {
+        pipelineGeneration += 1
         isCancelled = true
         engineStarted = false
         streamTask?.cancel()
@@ -246,7 +258,8 @@ class SabrOpusPlayer {
     private func runPipeline(
         audioStream: AsyncThrowingStream<Data, Error>,
         durationMs: Double,
-        startTimeMs: Double = 0
+        startTimeMs: Double = 0,
+        generation: Int
     ) async throws {
         let ebml = EBMLParser()
 
@@ -379,8 +392,10 @@ class SabrOpusPlayer {
             if engineStarted && !hasStartedPlaying {
                 if !playerNode.isPlaying { playerNode.play() }
                 hasStartedPlaying = true
-                let cb = onDidStartPlaying
-                DispatchQueue.main.async { cb?() }
+                if pipelineGeneration == generation {
+                    let cb = onDidStartPlaying
+                    DispatchQueue.main.async { cb?() }
+                }
             }
 
             if gate { break }
@@ -390,8 +405,10 @@ class SabrOpusPlayer {
         if engineStarted && !hasStartedPlaying {
             if !playerNode.isPlaying { playerNode.play() }
             hasStartedPlaying = true
-            let cb = onDidStartPlaying
-            DispatchQueue.main.async { cb?() }
+            if pipelineGeneration == generation {
+                let cb = onDidStartPlaying
+                DispatchQueue.main.async { cb?() }
+            }
         }
 
         // Ensure the node is playing before scheduling the sentinel, so the
@@ -402,16 +419,19 @@ class SabrOpusPlayer {
 
         // Schedule a silent sentinel buffer so the finish callback fires only after
         // all queued PCM data has actually been played back.
+        // The generation is captured so that a stale callback fired by playerNode.stop()
+        // (during a seek) cannot trigger onDidFinishPlaying for the new pipeline.
         if engineStarted, let pcmFmt = pcmFormat,
            let sentinel = AVAudioPCMBuffer(pcmFormat: pcmFmt, frameCapacity: 1) {
             sentinel.frameLength = 1
-            playerNode.scheduleBuffer(sentinel, completionCallbackType: .dataPlayedBack) { [weak self] _ in
-                guard let self, !self.isCancelled else { return }
+            playerNode.scheduleBuffer(sentinel, completionCallbackType: .dataPlayedBack) { [weak self, generation] _ in
+                guard let self, !self.isCancelled, self.pipelineGeneration == generation else { return }
                 let cb = self.onDidFinishPlaying
                 DispatchQueue.main.async { cb?() }
             }
         } else if engineStarted {
             // Engine started but sentinel couldn't be created — treat as finished
+            guard pipelineGeneration == generation else { return }
             let cb = onDidFinishPlaying
             DispatchQueue.main.async { cb?() }
         } else {

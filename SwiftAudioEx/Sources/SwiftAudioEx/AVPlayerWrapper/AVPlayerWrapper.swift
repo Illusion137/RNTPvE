@@ -269,7 +269,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             }
             let clamped = max(0, min(seconds, duration))
             if opus.sabrStream == nil {
-                // File mode: real pipeline restart from seek target
+                // File mode: restart pipeline from seek target
                 timeToSeekToAfterLoading = clamped
                 opusPlayStartDate = nil
                 opusPausedAt = nil
@@ -278,14 +278,18 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 opus.seek(to: clamped * 1000)
                 delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             } else {
-                // Stream mode: wall-clock adjustment only
-                if let pausedAt = opusPausedAt {
-                    opusPlayStartDate = pausedAt.addingTimeInterval(-clamped)
-                } else if opusPlayStartDate != nil {
-                    opusPlayStartDate = Date().addingTimeInterval(-clamped)
-                } else {
-                    timeToSeekToAfterLoading = clamped
-                }
+                // SABR stream mode: restart the stream from seek position.
+                // Wall-clock adjustment alone only changes displayed position — the server
+                // continues sending from where it left off. Restarting loadSABR() with
+                // startTimeMs tells the server to begin at the seek target via player_time_ms.
+                timeToSeekToAfterLoading = clamped
+                opusPlayStartDate = nil
+                opusPausedAt = nil
+                stopOpusTimer()
+                sabrOpusPlayer?.cancel()
+                sabrOpusPlayer = nil
+                state = .loading
+                loadSABR(startTimeMs: clamped * 1000)
                 delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             }
             return
@@ -515,7 +519,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
     // MARK: - SABR
 
-    private func loadSABR() {
+    private func loadSABR(startTimeMs: Double = 0) {
         guard let options = urlOptions,
               let serverUrl = options["sabrServerUrl"] as? String,
               let ustreamerConfig = options["sabrUstreamerConfig"] as? String else {
@@ -596,7 +600,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         let durationMs = (passedDuration ?? 0) * 1000
         let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
         player.prepareAudioSession()
-        player.start(options: playbackOptions, durationMs: durationMs)
+        player.start(options: playbackOptions, durationMs: durationMs, startTimeMs: startTimeMs)
     }
 
     private func loadOpusFile(url: URL) {

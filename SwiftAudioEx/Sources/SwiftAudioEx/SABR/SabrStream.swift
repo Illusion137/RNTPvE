@@ -257,7 +257,7 @@ class SabrStream {
             _errored = false
             _aborted = false
 
-            var player_time_ms: Double = 0
+            var player_time_ms: Double = options.start_time_ms ?? 0
 
             if let state = options.state, restore_state(video_format: video_format, audio_format: audio_format, state: state) {
                 player_time_ms = options.state?.player_time_ms ?? 0

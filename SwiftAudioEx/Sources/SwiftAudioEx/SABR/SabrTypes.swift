@@ -127,6 +127,9 @@ struct SabrPlaybackOptions {
     var max_retries: Int? = nil
     var stall_detection_ms: Double? = nil
     var state: SabrStreamState? = nil
+    /// Initial playback position in milliseconds sent to the server as player_time_ms in AbrState.
+    /// Tells the server to start sending segments from this position.
+    var start_time_ms: Double? = nil
 
     init() {}
 
