@@ -298,7 +298,6 @@ class SabrOpusPlayer {
         startTimeMs: Double = 0,
         generation: Int
     ) async throws {
-        log("T+\(elapsedMs())ms: runPipeline enter")
         let ebml = EBMLParser()
 
         var pendingPackets: [OpusPacket] = []
@@ -422,17 +421,6 @@ class SabrOpusPlayer {
                 continue
             }
 
-            // Safety net: if thousands of packets accumulated while waiting for
-            // the decoder, process only a small initial batch so playback starts
-            // quickly.  The remainder goes back to pendingPackets for the next
-            // iteration.  50 packets ≈ 1 second of Opus audio at 20ms/frame.
-            let maxInitialBatch = 50
-            if !hasStartedPlaying && toProcess.count > maxInitialBatch {
-                log("T+\(elapsedMs())ms: chunk[\(ci)] capping initial batch to \(maxInitialBatch) of \(toProcess.count) pending packets")
-                pendingPackets = Array(toProcess[maxInitialBatch...])
-                toProcess = Array(toProcess[..<maxInitialBatch])
-            }
-
             var gate = false
             var chunkFrames: [AVAudioPCMBuffer] = []
             var skippedByTime = 0
@@ -493,6 +481,7 @@ class SabrOpusPlayer {
 
         // Ensure playback starts even if we reach end of stream before the first play() call
         if engineStarted && !hasStartedPlaying {
+            log("T+\(elapsedMs())ms: WARNING — stream ended without starting playback, starting now")
             if !playerNode.isPlaying { playerNode.play() }
             hasStartedPlaying = true
             if pipelineGeneration == generation {
