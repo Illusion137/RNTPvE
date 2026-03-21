@@ -58,32 +58,41 @@ final class EBMLParser {
         packets.removeAll()
         var pos = buf.startIndex
 
+        // IDs of master (container) elements whose children we need to parse.
+        // For these we descend immediately — we must NOT wait for the full body
+        // to be buffered, because Segment can span the entire file.
+        let masterIDs: Set<UInt64> = [
+            ID.ebml.rawValue, ID.segment.rawValue, ID.info.rawValue,
+            ID.tracks.rawValue, ID.cluster.rawValue, ID.trackEntry.rawValue,
+            ID.blockGroup.rawValue
+        ]
+
         while pos < buf.endIndex {
             guard let (id, headerLen, bodyLen) = peekElement(at: pos) else { break }
             let bodyStart = pos + headerLen
 
-            // Not enough data for the body yet
+            // Unknown-size element (master) — enter it
             if bodyLen == nil {
-                // unknown-size element (master) — enter it
+                pos = bodyStart
+                continue
+            }
+
+            // Known-size master element — descend into children immediately
+            // without waiting for the full body to be buffered.
+            if masterIDs.contains(id) {
                 pos = bodyStart
                 continue
             }
 
             let bodySize = bodyLen!
 
-            // Guard against needing more data
+            // Leaf element — need the full body before we can parse it
             if bodyStart + bodySize > buf.endIndex { break }
 
             let bodyEnd = bodyStart + bodySize
             let body = buf[bodyStart..<bodyEnd]
 
             switch id {
-            case ID.ebml.rawValue, ID.segment.rawValue, ID.info.rawValue,
-                 ID.tracks.rawValue, ID.cluster.rawValue, ID.trackEntry.rawValue,
-                 ID.blockGroup.rawValue:
-                // Master element — descend into it (don't skip body)
-                pos = bodyStart
-
             case ID.timestampScale.rawValue:
                 let scale = readUInt(body)
                 timestampScaleMs = Double(scale) / 1_000_000.0

@@ -22,7 +22,7 @@ import Copus
 /// ```
 class SabrOpusPlayer {
 
-    private func log(_ message: String) { print("[SabrOpusPlayer] \(message)") }
+    private func log(_ message: String) { NSLog("[SabrOpusPlayer] %@", message) }
 
     // MARK: - Public interface (mirrors SabrAudioPlayer)
 
@@ -57,24 +57,44 @@ class SabrOpusPlayer {
     private var currentFileURL: URL? = nil
     private var currentFileDurationMs: Double = 0
 
+    /// Default PCM format used to wire the engine at init time.
+    /// Opus always decodes at 48 kHz; stereo is the overwhelmingly common case.
+    /// If the actual stream turns out to be mono we reconnect, but that's rare.
+    private static let defaultPCMFormat = AVAudioFormat(
+        commonFormat: .pcmFormatFloat32,
+        sampleRate: 48000,
+        channels: 2,
+        interleaved: false
+    )!
+
+    /// The format the engine nodes are currently wired with.
+    private var currentEngineFormat: AVAudioFormat?
+
+    /// Timing anchor for pipeline instrumentation.
+    var pipelineStartTime: CFAbsoluteTime = 0
+
     // MARK: - Init
 
     init(stream: SabrStream) {
         self.sabrStream = stream
+        let fmt = Self.defaultPCMFormat
         engine.attach(playerNode)
         engine.attach(eqNode)
-        engine.connect(playerNode, to: eqNode, format: nil)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        engine.connect(playerNode, to: eqNode, format: fmt)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
+        currentEngineFormat = fmt
         configureDefaultEQBands()
         setupInterruptionObserver()
     }
 
     init() {
         self.sabrStream = nil
+        let fmt = Self.defaultPCMFormat
         engine.attach(playerNode)
         engine.attach(eqNode)
-        engine.connect(playerNode, to: eqNode, format: nil)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        engine.connect(playerNode, to: eqNode, format: fmt)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
+        currentEngineFormat = fmt
         configureDefaultEQBands()
         setupInterruptionObserver()
     }
@@ -168,7 +188,7 @@ class SabrOpusPlayer {
 
         pipelineGeneration += 1
         let gen = pipelineGeneration
-        streamTask = Task { [weak self] in
+        streamTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
                 let (_, audio_stream, _) = try await sabrStream!.start(options: opts)
@@ -176,18 +196,41 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("stream error: \(error)")
-                let cb = onDidFailPlaying
-                DispatchQueue.main.async { cb?() }
+                onDidFailPlaying?()
             }
         }
     }
 
     func prepareAudioSession() {
+        pipelineStartTime = CFAbsoluteTimeGetCurrent()
+        log("T+0ms: prepareAudioSession enter")
         #if os(iOS) || os(tvOS) || os(watchOS)
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playback, mode: .default)
         try? session.setActive(true)
+        log("T+\(elapsedMs())ms: audio session configured")
         #endif
+        // Start the engine with the concrete default format (48 kHz stereo) so the
+        // audio hardware is fully warmed up.  If the stream turns out to match this
+        // format (the common case), runPipeline() will skip the stop/restart entirely.
+        if !engine.isRunning {
+            do {
+                try engine.start()
+                engineStarted = true
+                log("T+\(elapsedMs())ms: engine started (pre-warm)")
+                onEngineStarted?()
+            } catch {
+                log("T+\(elapsedMs())ms: engine pre-warm failed: \(error)")
+            }
+        } else {
+            engineStarted = true
+            log("T+\(elapsedMs())ms: engine already running")
+            onEngineStarted?()
+        }
+    }
+
+    func elapsedMs() -> Int {
+        Int((CFAbsoluteTimeGetCurrent() - pipelineStartTime) * 1000)
     }
 
     func seek(to timeMs: Double) {
@@ -198,13 +241,9 @@ class SabrOpusPlayer {
         isCancelled = false
         streamTask?.cancel()
         playerNode.stop()
-        if engine.isRunning { engine.stop() }
-        engineStarted = false
-        engine.disconnectNodeOutput(playerNode)
-        engine.disconnectNodeOutput(eqNode)
-        engine.connect(playerNode, to: eqNode, format: nil)
-        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
-        streamTask = Task { [weak self] in
+        // Keep the engine running — runPipeline will reuse it if the format matches.
+        engineStarted = engine.isRunning
+        streamTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
                 try await self.runPipeline(
@@ -215,8 +254,7 @@ class SabrOpusPlayer {
                 )
             } catch {
                 guard !Task.isCancelled else { return }
-                let cb = onDidFailPlaying
-                DispatchQueue.main.async { cb?() }
+                onDidFailPlaying?()
             }
         }
     }
@@ -226,15 +264,14 @@ class SabrOpusPlayer {
         currentFileDurationMs = durationMs
         pipelineGeneration += 1
         let gen = pipelineGeneration
-        streamTask = Task { [weak self] in
+        streamTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
                 try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs, generation: gen)
             } catch {
                 guard !Task.isCancelled else { return }
                 log("file playback error: \(error)")
-                let cb = onDidFailPlaying
-                DispatchQueue.main.async { cb?() }
+                onDidFailPlaying?()
             }
         }
     }
@@ -261,19 +298,27 @@ class SabrOpusPlayer {
         startTimeMs: Double = 0,
         generation: Int
     ) async throws {
+        log("T+\(elapsedMs())ms: runPipeline enter")
         let ebml = EBMLParser()
 
         var pendingPackets: [OpusPacket] = []
         var opusDecoder: LibOpusDecoder?
         var pcmFormat: AVAudioFormat?
         var preSkipRemaining = 0
-        engineStarted = false
         var hasStartedPlaying = false
         var proactiveFired = false
         var totalBytesReceived = 0
+        var chunkIndex = 0
 
         for try await chunk in audioStream {
             guard !Task.isCancelled else { break }
+
+            let ci = chunkIndex
+            chunkIndex += 1
+
+            if ci < 5 || (ci < 20 && ci % 5 == 0) {
+                log("T+\(elapsedMs())ms: chunk[\(ci)] received (\(chunk.count) bytes, total=\(totalBytesReceived + chunk.count))")
+            }
 
             totalBytesReceived += chunk.count
             ebml.feed(chunk)
@@ -286,6 +331,7 @@ class SabrOpusPlayer {
 
             // Set up decoder once we have stream info
             if opusDecoder == nil, let info = ebml.streamInfo {
+                log("T+\(elapsedMs())ms: stream info parsed (channels=\(info.channelCount), preSkip=\(info.preSkip))")
                 // Always 48000 Hz — libopus decodes at 48kHz regardless of OpusHead sampleRate.
                 // Non-interleaved is required by AVAudioPlayerNode (interleaved crashes with -10868).
                 let channelCount = AVAudioChannelCount(info.channelCount)
@@ -296,8 +342,7 @@ class SabrOpusPlayer {
                     interleaved: false
                 ) else {
                     log("failed to create PCM format")
-                    let cb = onDidFailPlaying
-                    DispatchQueue.main.async { cb?() }
+                    onDidFailPlaying?()
                     return
                 }
                 pcmFormat = fmt
@@ -305,63 +350,93 @@ class SabrOpusPlayer {
                     opusDecoder = try LibOpusDecoder(sampleRate: 48000, channels: Int32(info.channelCount))
                 } catch {
                     log("LibOpusDecoder init failed: \(error)")
-                    let cb = onDidFailPlaying
-                    DispatchQueue.main.async { cb?() }
+                    onDidFailPlaying?()
                     return
                 }
                 preSkipRemaining = info.preSkip
+                log("T+\(elapsedMs())ms: decoder created")
 
-                // Wire engine with the real PCM format now that we know it.
-                // Both legs of the chain must be reconnected with the concrete format;
-                // leaving eqNode→mainMixerNode on the nil/default format causes -10868.
-                engine.disconnectNodeOutput(playerNode)
-                engine.disconnectNodeOutput(eqNode)
-                engine.connect(playerNode, to: eqNode, format: fmt)
-                engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
+                // If the engine is already running with the correct format (the common
+                // case — 48 kHz stereo wired at init), skip the expensive stop/restart
+                // cycle entirely.  Only rewire when the channel count differs.
+                let formatMatches = engine.isRunning
+                    && currentEngineFormat?.channelCount == fmt.channelCount
+                    && currentEngineFormat?.sampleRate == fmt.sampleRate
 
-                if !engineStarted {
-                    do {
-                        try engine.start()
+                if formatMatches {
+                    log("T+\(elapsedMs())ms: engine format matches, skipping restart")
+                    if !engineStarted {
                         engineStarted = true
-                        let engineCb = onEngineStarted
-                        DispatchQueue.main.async { engineCb?() }
-                    } catch {
-                        #if os(iOS) || os(tvOS) || os(watchOS)
-                        // Retry: force session active first, then try engine again
+                        onEngineStarted?()
+                    }
+                } else {
+                    log("T+\(elapsedMs())ms: engine format mismatch, rewiring (current=\(currentEngineFormat?.channelCount ?? 0)ch, need=\(fmt.channelCount)ch)")
+                    // Stop first — reconnecting nodes requires the engine to not be running.
+                    if engine.isRunning { engine.stop() }
+                    engine.disconnectNodeOutput(playerNode)
+                    engine.disconnectNodeOutput(eqNode)
+                    engine.connect(playerNode, to: eqNode, format: fmt)
+                    engine.connect(eqNode, to: engine.mainMixerNode, format: fmt)
+                    currentEngineFormat = fmt
+
+                    if !engineStarted {
                         do {
-                            try AVAudioSession.sharedInstance().setActive(true)
                             try engine.start()
                             engineStarted = true
-                            let engineCb = onEngineStarted
-                            DispatchQueue.main.async { engineCb?() }
-                        } catch let retryError {
-                            log("engine.start() failed after retry: \(retryError)")
-                            let cb = onDidFailPlaying
-                            DispatchQueue.main.async { cb?() }
+                            log("T+\(elapsedMs())ms: engine restarted with new format")
+                            onEngineStarted?()
+                        } catch {
+                            #if os(iOS) || os(tvOS) || os(watchOS)
+                            // Retry: force session active first, then try engine again
+                            do {
+                                try AVAudioSession.sharedInstance().setActive(true)
+                                try engine.start()
+                                engineStarted = true
+                                log("T+\(elapsedMs())ms: engine restarted after retry")
+                                onEngineStarted?()
+                            } catch let retryError {
+                                log("engine.start() failed after retry: \(retryError)")
+                                onDidFailPlaying?()
+                                return
+                            }
+                            #else
+                            log("engine.start() failed: \(error)")
+                            onDidFailPlaying?()
                             return
+                            #endif
                         }
-                        #else
-                        log("engine.start() failed: \(error)")
-                        let cb = onDidFailPlaying
-                        DispatchQueue.main.async { cb?() }
-                        return
-                        #endif
                     }
                 }
             }
 
             // Flush any packets accumulated before decoder was ready
-            let toProcess = pendingPackets + ebml.packets
+            var toProcess = pendingPackets + ebml.packets
             pendingPackets = []
 
             guard let dec = opusDecoder, let pcmFmt = pcmFormat else {
                 // Decoder not ready yet; hold onto packets
+                if ci < 5 {
+                    log("T+\(elapsedMs())ms: chunk[\(ci)] decoder not ready, pending \(ebml.packets.count) packets (streamInfo=\(ebml.streamInfo != nil))")
+                }
                 pendingPackets.append(contentsOf: ebml.packets)
                 continue
             }
 
+            // Safety net: if thousands of packets accumulated while waiting for
+            // the decoder, process only a small initial batch so playback starts
+            // quickly.  The remainder goes back to pendingPackets for the next
+            // iteration.  50 packets ≈ 1 second of Opus audio at 20ms/frame.
+            let maxInitialBatch = 50
+            if !hasStartedPlaying && toProcess.count > maxInitialBatch {
+                log("T+\(elapsedMs())ms: chunk[\(ci)] capping initial batch to \(maxInitialBatch) of \(toProcess.count) pending packets")
+                pendingPackets = Array(toProcess[maxInitialBatch...])
+                toProcess = Array(toProcess[..<maxInitialBatch])
+            }
+
             var gate = false
             var chunkFrames: [AVAudioPCMBuffer] = []
+            var skippedByTime = 0
+            var decodeFailed = 0
             for packet in toProcess {
                 if durationMs > 0 && packet.timestampMs >= durationMs {
                     log("gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms")
@@ -369,32 +444,47 @@ class SabrOpusPlayer {
                     break
                 }
 
-                if startTimeMs > 0 && packet.timestampMs < startTimeMs { continue }
+                if startTimeMs > 0 && packet.timestampMs < startTimeMs {
+                    skippedByTime += 1
+                    continue
+                }
 
                 guard let pcmBuf = decodePacket(
                     packet: packet,
                     decoder: dec,
                     pcmFormat: pcmFmt,
                     preSkipRemaining: &preSkipRemaining
-                ) else { continue }
+                ) else {
+                    decodeFailed += 1
+                    continue
+                }
 
                 chunkFrames.append(pcmBuf)
+            }
+
+            if ci < 10 || !hasStartedPlaying {
+                log("T+\(elapsedMs())ms: chunk[\(ci)] toProcess=\(toProcess.count) decoded=\(chunkFrames.count) skippedTime=\(skippedByTime) decodeFail=\(decodeFailed) preSkipLeft=\(preSkipRemaining)")
             }
 
             // Coalesce all decoded frames into one buffer per chunk to reduce the number of
             // scheduleBuffer() calls, which otherwise overwhelms the CoreAudio render thread.
             if let coalesced = coalescePCM(chunkFrames, format: pcmFmt) {
                 playerNode.scheduleBuffer(coalesced, completionHandler: nil)
+            } else if !hasStartedPlaying && ci < 10 {
+                log("T+\(elapsedMs())ms: chunk[\(ci)] coalescePCM returned nil (frames=\(chunkFrames.count))")
             }
 
             // Start playing as soon as we've scheduled the first chunk of audio —
             // don't wait for the entire stream to buffer.
-            if engineStarted && !hasStartedPlaying {
+            if engineStarted && !hasStartedPlaying && !chunkFrames.isEmpty {
+                log("T+\(elapsedMs())ms: first buffer scheduled, calling playerNode.play()")
                 if !playerNode.isPlaying { playerNode.play() }
                 hasStartedPlaying = true
                 if pipelineGeneration == generation {
-                    let cb = onDidStartPlaying
-                    DispatchQueue.main.async { cb?() }
+                    // Call directly from the pipeline task — the state setter is
+                    // thread-safe, so we skip the DispatchQueue.main.async hop that
+                    // can stall for seconds in React Native apps.
+                    onDidStartPlaying?()
                 }
             }
 
@@ -406,8 +496,7 @@ class SabrOpusPlayer {
             if !playerNode.isPlaying { playerNode.play() }
             hasStartedPlaying = true
             if pipelineGeneration == generation {
-                let cb = onDidStartPlaying
-                DispatchQueue.main.async { cb?() }
+                onDidStartPlaying?()
             }
         }
 
@@ -426,18 +515,15 @@ class SabrOpusPlayer {
             sentinel.frameLength = 1
             playerNode.scheduleBuffer(sentinel, completionCallbackType: .dataPlayedBack) { [weak self, generation] _ in
                 guard let self, !self.isCancelled, self.pipelineGeneration == generation else { return }
-                let cb = self.onDidFinishPlaying
-                DispatchQueue.main.async { cb?() }
+                self.onDidFinishPlaying?()
             }
         } else if engineStarted {
             // Engine started but sentinel couldn't be created — treat as finished
             guard pipelineGeneration == generation else { return }
-            let cb = onDidFinishPlaying
-            DispatchQueue.main.async { cb?() }
+            onDidFinishPlaying?()
         } else {
             // No audio was ever produced — treat as failure
-            let cb = onDidFailPlaying
-            DispatchQueue.main.async { cb?() }
+            onDidFailPlaying?()
         }
     }
 
@@ -445,7 +531,7 @@ class SabrOpusPlayer {
 
     private func makeFileStream(url: URL, chunkSize: Int = 65536) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
-            Task {
+            Task(priority: .userInitiated) {
                 do {
                     let handle = try FileHandle(forReadingFrom: url)
                     defer { try? handle.close() }

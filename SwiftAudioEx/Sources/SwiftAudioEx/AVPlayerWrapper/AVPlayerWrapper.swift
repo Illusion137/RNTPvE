@@ -559,37 +559,43 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            // Use opusPausedAt as the reference if applyAVPlayerRate already paused
-            // the node (e.g. playWhenReady was false when onEngineStarted fired).
-            // Using Date() in that case would set opusPlayStartDate *after* opusPausedAt,
-            // making currentTime return a negative value.
-            let ref = self.opusPausedAt ?? Date()
-            if let initialTime = self.timeToSeekToAfterLoading {
-                self.timeToSeekToAfterLoading = nil
-                self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
-            } else {
-                self.opusPlayStartDate = ref
-            }
+            NSLog("[SabrOpusPlayer] T+\(player.elapsedMs())ms: onDidStartPlaying fired")
+            // Set state immediately — the state setter is thread-safe (barrier dispatch).
             self.state = self.playWhenReady ? .playing : .paused
-            if self.playWhenReady { self.startOpusTimer() }
+            DispatchQueue.main.async {
+                guard self.sabrOpusPlayer === player else { return }
+                let ref = self.opusPausedAt ?? Date()
+                if let initialTime = self.timeToSeekToAfterLoading {
+                    self.timeToSeekToAfterLoading = nil
+                    self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
+                } else {
+                    self.opusPlayStartDate = ref
+                }
+                if self.playWhenReady { self.startOpusTimer() }
+            }
         }
 
         player.onDidFinishPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.stopOpusTimer()
             self.state = .ended
-            self.delegate?.AVWrapperItemDidPlayToEndTime()
+            DispatchQueue.main.async {
+                self.stopOpusTimer()
+                self.delegate?.AVWrapperItemDidPlayToEndTime()
+            }
         }
 
         player.onDidFailPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.stopOpusTimer()
-            self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
+            DispatchQueue.main.async {
+                self.stopOpusTimer()
+                self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
+            }
         }
 
         player.onEngineStarted = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.applyAVPlayerRate()
+            NSLog("[SabrOpusPlayer] T+\(player.elapsedMs())ms: onEngineStarted fired")
+            DispatchQueue.main.async { self.applyAVPlayerRate() }
         }
 
         state = .loading
@@ -613,34 +619,42 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            // Use opusPausedAt as the reference if applyAVPlayerRate already paused
-            // the node (e.g. playWhenReady was false when onEngineStarted fired).
-            // Using Date() in that case would set opusPlayStartDate *after* opusPausedAt,
-            // making currentTime return a negative value.
-            let ref = self.opusPausedAt ?? Date()
-            if let initialTime = self.timeToSeekToAfterLoading {
-                self.timeToSeekToAfterLoading = nil
-                self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
-            } else {
-                self.opusPlayStartDate = ref
-            }
+            NSLog("[SabrOpusPlayer] T+\(player.elapsedMs())ms: onDidStartPlaying fired")
+            // Set state immediately — the state setter is thread-safe (barrier dispatch).
+            // This avoids the DispatchQueue.main.async delay that stalls in RN apps.
             self.state = self.playWhenReady ? .playing : .paused
-            if self.playWhenReady { self.startOpusTimer() }
+            // Timer and date tracking must be on main thread.
+            DispatchQueue.main.async {
+                guard self.sabrOpusPlayer === player else { return }
+                let ref = self.opusPausedAt ?? Date()
+                if let initialTime = self.timeToSeekToAfterLoading {
+                    self.timeToSeekToAfterLoading = nil
+                    self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
+                } else {
+                    self.opusPlayStartDate = ref
+                }
+                if self.playWhenReady { self.startOpusTimer() }
+            }
         }
         player.onDidFinishPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.stopOpusTimer()
             self.state = .ended
-            self.delegate?.AVWrapperItemDidPlayToEndTime()
+            DispatchQueue.main.async {
+                self.stopOpusTimer()
+                self.delegate?.AVWrapperItemDidPlayToEndTime()
+            }
         }
         player.onDidFailPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.stopOpusTimer()
-            self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
+            DispatchQueue.main.async {
+                self.stopOpusTimer()
+                self.playbackFailed(error: AudioPlayerError.PlaybackError.playbackFailed)
+            }
         }
         player.onEngineStarted = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
-            self.applyAVPlayerRate()
+            NSLog("[SabrOpusPlayer] T+\(player.elapsedMs())ms: onEngineStarted fired")
+            DispatchQueue.main.async { self.applyAVPlayerRate() }
         }
 
         state = .loading
