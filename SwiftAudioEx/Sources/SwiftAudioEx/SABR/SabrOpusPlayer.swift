@@ -39,6 +39,7 @@ class SabrOpusPlayer {
 
     let engine = AVAudioEngine()
     let playerNode = AVAudioPlayerNode()
+    let eqNode = AVAudioUnitEQ(numberOfBands: 10)
 
     // MARK: - Private state
 
@@ -54,14 +55,20 @@ class SabrOpusPlayer {
     init(stream: SabrStream) {
         self.sabrStream = stream
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        engine.attach(eqNode)
+        engine.connect(playerNode, to: eqNode, format: nil)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        configureDefaultEQBands()
         setupInterruptionObserver()
     }
 
     init() {
         self.sabrStream = nil
         engine.attach(playerNode)
-        engine.connect(playerNode, to: engine.mainMixerNode, format: nil)
+        engine.attach(eqNode)
+        engine.connect(playerNode, to: eqNode, format: nil)
+        engine.connect(eqNode, to: engine.mainMixerNode, format: nil)
+        configureDefaultEQBands()
         setupInterruptionObserver()
     }
 
@@ -69,6 +76,30 @@ class SabrOpusPlayer {
         if let obs = interruptionObserver { NotificationCenter.default.removeObserver(obs) }
         if let obs = engineConfigObserver { NotificationCenter.default.removeObserver(obs) }
     }
+
+    private func configureDefaultEQBands() {
+        let frequencies: [Float] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+        for (i, band) in eqNode.bands.enumerated() {
+            band.filterType = .parametric
+            band.frequency  = frequencies[i]
+            band.bandwidth  = 1.0
+            band.gain       = 0.0
+            band.bypass     = false
+        }
+        eqNode.bypass = false
+    }
+
+    // MARK: - EQ
+
+    func setEQBands(_ bands: [Float]) {
+        for (i, band) in eqNode.bands.enumerated() {
+            guard i < bands.count else { break }
+            band.gain = max(-24, min(24, bands[i]))
+        }
+    }
+    func getEQBands() -> [Float] { eqNode.bands.map { $0.gain } }
+    func resetEQ() { eqNode.bands.forEach { $0.gain = 0.0 } }
+    func setEQEnabled(_ enabled: Bool) { eqNode.bypass = !enabled }
 
     private func setupInterruptionObserver() {
         #if os(iOS) || os(tvOS) || os(watchOS)
@@ -177,6 +208,7 @@ class SabrOpusPlayer {
         var pcmFormat: AVAudioFormat?
         var preSkipRemaining = 0
         engineStarted = false
+        var hasStartedPlaying = false
         var proactiveFired = false
         var totalBytesReceived = 0
 
@@ -221,7 +253,7 @@ class SabrOpusPlayer {
 
                 // Wire engine with the real PCM format now that we know it
                 engine.disconnectNodeOutput(playerNode)
-                engine.connect(playerNode, to: engine.mainMixerNode, format: fmt)
+                engine.connect(playerNode, to: eqNode, format: fmt)
 
                 if !engineStarted {
                     #if os(iOS) || os(tvOS) || os(watchOS)
@@ -301,8 +333,9 @@ class SabrOpusPlayer {
 
             // Start playing as soon as we've scheduled the first chunk of audio —
             // don't wait for the entire stream to buffer.
-            if engineStarted && !playerNode.isPlaying {
-                playerNode.play()
+            if engineStarted && !hasStartedPlaying {
+                if !playerNode.isPlaying { playerNode.play() }
+                hasStartedPlaying = true
                 let cb = onDidStartPlaying
                 DispatchQueue.main.async { cb?() }
             }
@@ -311,8 +344,9 @@ class SabrOpusPlayer {
         }
 
         // Ensure playback starts even if we reach end of stream before the first play() call
-        if engineStarted && !playerNode.isPlaying {
-            playerNode.play()
+        if engineStarted && !hasStartedPlaying {
+            if !playerNode.isPlaying { playerNode.play() }
+            hasStartedPlaying = true
             let cb = onDidStartPlaying
             DispatchQueue.main.async { cb?() }
         }
@@ -333,8 +367,13 @@ class SabrOpusPlayer {
                 let cb = self.onDidFinishPlaying
                 DispatchQueue.main.async { cb?() }
             }
-        } else {
+        } else if engineStarted {
+            // Engine started but sentinel couldn't be created — treat as finished
             let cb = onDidFinishPlaying
+            DispatchQueue.main.async { cb?() }
+        } else {
+            // No audio was ever produced — treat as failure
+            let cb = onDidFailPlaying
             DispatchQueue.main.async { cb?() }
         }
     }

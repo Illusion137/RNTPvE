@@ -228,6 +228,15 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
             return MPRemoteCommandHandlerStatus.success
         }
 
+        player.onSabrRefreshPoToken = { [weak self] reason in
+            guard let self = self else { return }
+            self.emit(event: .SabrRefreshPoToken, body: ["reason": reason])
+        }
+        player.onSabrReloadPlayerResponse = { [weak self] token in
+            guard let self = self else { return }
+            self.emit(event: .SabrReloadPlayerResponse, body: ["token": token as Any])
+        }
+
         hasInitialized = true
         resolve(NSNull())
     }
@@ -608,7 +617,7 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         }
         player.clear()
         try? player.add(items: tracks)
-        resolve(index)
+        resolve(NSNull())
     }
 
     @objc

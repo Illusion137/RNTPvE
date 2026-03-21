@@ -364,8 +364,19 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
         event.didRecreateAVPlayer.emit(data: ())
     }
     
+    // MARK: - SABR Streaming Callbacks
+
+    public var onSabrRefreshPoToken: ((String) -> Void)? {
+        get { avPlayerWrapper.onSabrRefreshPoToken }
+        set { avPlayerWrapper.onSabrRefreshPoToken = newValue }
+    }
+    public var onSabrReloadPlayerResponse: ((String?) -> Void)? {
+        get { avPlayerWrapper.onSabrReloadPlayerResponse }
+        set { avPlayerWrapper.onSabrReloadPlayerResponse = newValue }
+    }
+
     // MARK: - Equalizer
-    
+
     /**
      Set equalizer bands. Each value represents gain in decibels.
      - parameter bands: Array of gain values for each frequency band (10 bands)

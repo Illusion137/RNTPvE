@@ -34,6 +34,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var url: URL? = nil
     fileprivate var urlOptions: [String: Any]? = nil
     private var sabrOpusPlayer: SabrOpusPlayer? = nil
+    private var _lastExplicitVolume: Float = 1.0
+    var onSabrRefreshPoToken: ((String) -> Void)? = nil
+    var onSabrReloadPlayerResponse: ((String?) -> Void)? = nil
     /// Wall-clock time when the opus player started playing (adjusted for pauses).
     private var opusPlayStartDate: Date? = nil
     /// Wall-clock time when opus was paused (nil when not paused).
@@ -165,7 +168,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     var bufferedPosition: TimeInterval {
-        currentItem?.loadedTimeRanges.last?.timeRangeValue.end.seconds ?? 0
+        if sabrOpusPlayer != nil { return duration }
+        return currentItem?.loadedTimeRanges.last?.timeRangeValue.end.seconds ?? 0
     }
 
     var reasonForWaitingToPlay: AVPlayer.WaitingReason? {
@@ -193,13 +197,32 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     var volume: Float {
-        get { avPlayer.volume }
-        set { avPlayer.volume = newValue }
+        get {
+            if let opus = sabrOpusPlayer { return opus.engine.mainMixerNode.outputVolume }
+            return avPlayer.volume
+        }
+        set {
+            _lastExplicitVolume = newValue
+            if let opus = sabrOpusPlayer {
+                DispatchQueue.main.async { opus.engine.mainMixerNode.outputVolume = newValue }
+            } else {
+                avPlayer.volume = newValue
+            }
+        }
     }
 
     var isMuted: Bool {
-        get { avPlayer.isMuted }
-        set { avPlayer.isMuted = newValue }
+        get {
+            if let opus = sabrOpusPlayer { return opus.engine.mainMixerNode.outputVolume == 0 && _lastExplicitVolume > 0 }
+            return avPlayer.isMuted
+        }
+        set {
+            if let opus = sabrOpusPlayer {
+                DispatchQueue.main.async { opus.engine.mainMixerNode.outputVolume = newValue ? 0 : self._lastExplicitVolume }
+            } else {
+                avPlayer.isMuted = newValue
+            }
+        }
     }
 
     var automaticallyWaitsToMinimizeStalling: Bool {
@@ -216,6 +239,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     func togglePlaying() {
+        if sabrOpusPlayer != nil {
+            playWhenReady ? pause() : play()
+            return
+        }
         switch avPlayer.timeControlStatus {
         case .playing, .waitingToPlayAtSpecifiedRate:
             pause()
@@ -235,18 +262,37 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     func seek(to seconds: TimeInterval) {
-       // if the player is loading then we need to defer seeking until it's ready.
+        if sabrOpusPlayer != nil {
+            guard Thread.isMainThread else {
+                DispatchQueue.main.async { [weak self] in self?.seek(to: seconds) }
+                return
+            }
+            let clamped = max(0, min(seconds, duration))
+            if opusPausedAt != nil {
+                opusPausedAt = Date()
+                opusPlayStartDate = opusPausedAt!.addingTimeInterval(-clamped)
+            } else if opusPlayStartDate != nil {
+                opusPlayStartDate = Date().addingTimeInterval(-clamped)
+            }
+            delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
+            return
+        }
+        // if the player is loading then we need to defer seeking until it's ready.
         if (avPlayer.currentItem == nil) {
-         timeToSeekToAfterLoading = seconds
-       } else {
-           let time = CMTimeMakeWithSeconds(seconds, preferredTimescale: 1000)
-           avPlayer.seek(to: time, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero) { (finished) in
-             self.delegate?.AVWrapper(seekTo: Double(seconds), didFinish: finished)
-         }
-       }
-     }
+            timeToSeekToAfterLoading = seconds
+        } else {
+            let time = CMTimeMakeWithSeconds(seconds, preferredTimescale: 1000)
+            avPlayer.seek(to: time, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero) { (finished) in
+                self.delegate?.AVWrapper(seekTo: Double(seconds), didFinish: finished)
+            }
+        }
+    }
 
     func seek(by seconds: TimeInterval) {
+        if sabrOpusPlayer != nil {
+            seek(to: currentTime + seconds)
+            return
+        }
         if let currentItem = avPlayer.currentItem {
             let time = currentItem.currentTime().seconds + seconds
             avPlayer.seek(
@@ -481,10 +527,18 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         let player = SabrOpusPlayer(stream: stream)
         sabrOpusPlayer = player
 
-        player.onRefreshPoToken = { reason in
-            print("SabrOpusPlayer: PoToken refresh requested (\(reason))")
+        player.onRefreshPoToken = { [weak self] reason in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.onSabrRefreshPoToken?(reason)
         }
-        player.onReloadPlayerResponse = { _ in }
+        player.onReloadPlayerResponse = { [weak self] token in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            self.onSabrReloadPlayerResponse?(token)
+        }
+
+        let currentBands = audioTapProcessor.getEQBands()
+        if currentBands.contains(where: { $0 != 0 }) { player.setEQBands(currentBands) }
+        player.setEQEnabled(audioTapProcessor.isEnabled)
 
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
@@ -512,6 +566,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
 
         state = .loading
+        if let d = passedDuration, d > 0 {
+            delegate?.AVWrapper(didUpdateDuration: d)
+        }
 
         let durationMs = (passedDuration ?? 0) * 1000
         let playbackOptions = SabrPlaybackOptions(enabled_track_types: EnabledTrackTypes.audio_only)
@@ -522,6 +579,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         let player = SabrOpusPlayer()
         sabrOpusPlayer = player
 
+        let currentBands = audioTapProcessor.getEQBands()
+        if currentBands.contains(where: { $0 != 0 }) { player.setEQBands(currentBands) }
+        player.setEQEnabled(audioTapProcessor.isEnabled)
+
         player.onDidStartPlaying = { [weak self] in
             guard let self, self.sabrOpusPlayer === player else { return }
             self.opusPlayStartDate = Date()
@@ -545,6 +606,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
 
         state = .loading
+        if let d = passedDuration, d > 0 {
+            delegate?.AVWrapper(didUpdateDuration: d)
+        }
         let durationMs = (passedDuration ?? 0) * 1000
         player.startFile(url: url, durationMs: durationMs)
     }
@@ -563,6 +627,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     private func startOpusTimer() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.startOpusTimer() }
+            return
+        }
         opusTimer?.invalidate()
         let interval = timeEventFrequency.getTime().seconds
         opusTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
@@ -572,6 +640,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     private func stopOpusTimer() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.stopOpusTimer() }
+            return
+        }
         opusTimer?.invalidate()
         opusTimer = nil
     }
@@ -775,21 +847,25 @@ extension AVPlayerWrapper {
     /// Set equalizer bands (gain in dB, -24 to +24)
     func setEqualizerBands(_ bands: [Float]) {
         audioTapProcessor.setEQBands(bands)
+        sabrOpusPlayer?.setEQBands(bands)
     }
 
     /// Get current equalizer bands
     func getEqualizerBands() -> [Float] {
+        if let opus = sabrOpusPlayer { return opus.getEQBands() }
         return audioTapProcessor.getEQBands()
     }
 
     /// Reset equalizer to flat
     func resetEqualizer() {
         audioTapProcessor.resetEQ()
+        sabrOpusPlayer?.resetEQ()
     }
 
     /// Enable/disable equalizer processing
     func setEqualizerEnabled(_ enabled: Bool) {
         audioTapProcessor.isEnabled = enabled
+        sabrOpusPlayer?.setEQEnabled(enabled)
     }
 
     /// Check if equalizer is enabled
