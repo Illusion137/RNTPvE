@@ -34,6 +34,8 @@ class SabrOpusPlayer {
     var onDidFinishPlaying: (() -> Void)?
     /// Called on the main thread when playback fails with an error.
     var onDidFailPlaying: (() -> Void)?
+    /// Called when the stream discovers its actual duration (ms) from server metadata.
+    var onDurationUpdated: ((Double) -> Void)?
     /// Called on the main thread immediately after AVAudioEngine starts successfully.
     var onEngineStarted: (() -> Void)?
 
@@ -184,6 +186,9 @@ class SabrOpusPlayer {
         }
         sabrStream?.on_reload_player_response { [weak self] (ctx: ReloadPlaybackContext) in
             self?.onReloadPlayerResponse?(ctx.reload_playback_params?.token)
+        }
+        sabrStream?.on_duration_updated { [weak self] durationMs in
+            self?.onDurationUpdated?(durationMs)
         }
 
         pipelineGeneration += 1
@@ -479,6 +484,11 @@ class SabrOpusPlayer {
             if gate { break }
         }
 
+        // If this pipeline was cancelled (e.g. during a seek), exit silently.
+        // Without this guard, the else branch below fires onDidFailPlaying
+        // because cancel() sets engineStarted = false.
+        guard !isCancelled && !Task.isCancelled else { return }
+
         // Ensure playback starts even if we reach end of stream before the first play() call
         if engineStarted && !hasStartedPlaying {
             log("T+\(elapsedMs())ms: WARNING — stream ended without starting playback, starting now")
@@ -512,6 +522,7 @@ class SabrOpusPlayer {
             onDidFinishPlaying?()
         } else {
             // No audio was ever produced — treat as failure
+            guard pipelineGeneration == generation else { return }
             onDidFailPlaying?()
         }
     }

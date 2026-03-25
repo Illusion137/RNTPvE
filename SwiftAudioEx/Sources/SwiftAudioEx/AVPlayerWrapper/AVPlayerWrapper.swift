@@ -267,7 +267,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 DispatchQueue.main.async { [weak self] in self?.seek(to: seconds) }
                 return
             }
-            let clamped = max(0, min(seconds, duration))
+            let effectiveDuration = duration > 0 ? duration : Double.infinity
+            let clamped = max(0, min(seconds, effectiveDuration))
             if opus.sabrStream == nil {
                 // File mode: restart pipeline from seek target
                 timeToSeekToAfterLoading = clamped
@@ -551,6 +552,15 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         player.onReloadPlayerResponse = { [weak self] token in
             guard let self, self.sabrOpusPlayer === player else { return }
             self.onSabrReloadPlayerResponse?(token)
+        }
+        player.onDurationUpdated = { [weak self] durationMs in
+            guard let self, self.sabrOpusPlayer === player else { return }
+            let durationSec = durationMs / 1000.0
+            self.passedDuration = durationSec
+            DispatchQueue.main.async {
+                guard self.sabrOpusPlayer === player else { return }
+                self.delegate?.AVWrapper(didUpdateDuration: durationSec)
+            }
         }
 
         let currentBands = audioTapProcessor.getEQBands()

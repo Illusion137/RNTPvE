@@ -73,6 +73,7 @@ class SabrStream {
     private var on_format_initialization_listeners: [(InitializedFormat) -> Void] = []
     private var on_stream_protection_status_listeners: [(StreamProtectionStatus) -> Void] = []
     private var on_reload_player_response_listeners: [(ReloadPlaybackContext) -> Void] = []
+    private var on_duration_updated_listeners: [(Double) -> Void] = []
     private var on_finish_listeners: [() -> Void] = []
     private var on_abort_listeners: [() -> Void] = []
 
@@ -136,6 +137,10 @@ class SabrStream {
 
     func on_reload_player_response(_ listener: @escaping (ReloadPlaybackContext) -> Void) {
         on_reload_player_response_listeners.append(listener)
+    }
+
+    func on_duration_updated(_ listener: @escaping (Double) -> Void) {
+        on_duration_updated_listeners.append(listener)
     }
 
     func on_finish(_ listener: @escaping () -> Void) {
@@ -977,6 +982,7 @@ class SabrStream {
         if duration_ms != expected_duration {
             duration_ms = expected_duration
             logger.debug(tag: tag, message: "Corrected stream duration to \(duration_ms)ms based on format initialization metadata")
+            on_duration_updated_listeners.forEach { $0(expected_duration) }
         }
     }
 
