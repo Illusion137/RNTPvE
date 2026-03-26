@@ -24,6 +24,9 @@ public class QueuedAudioPlayer: AudioPlayer, QueueManagerDelegate {
     /// The repeat mode for the queue player.
     public var repeatMode: RepeatMode = .off
 
+    /// Duration in seconds to crossfade between tracks. Currently stored but not applied natively.
+    public var crossfadeDuration: Double = 0
+
     public override var currentItem: AudioItem? {
         queue.current
     }

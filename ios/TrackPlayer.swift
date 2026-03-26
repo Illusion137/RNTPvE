@@ -826,6 +826,15 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         )
     }
 
+    // MARK: - Crossfade
+
+    @objc
+    public func setCrossFade(seconds: Double, resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+        if (rejectWhenNotInitialized(reject: reject)) { return }
+        player.crossfadeDuration = seconds
+        resolve(NSNull())
+    }
+
     // MARK: - Equalizer
 
     @objc
