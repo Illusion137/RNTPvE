@@ -38,6 +38,8 @@ protocol AVPlayerWrapperProtocol: AnyObject {
     var timeEventFrequency: TimeEventFrequency { get set }
     
     var volume: Float { get set }
+
+    var crossfadeVolume: Float { get set }
     
     var isMuted: Bool { get set }
     

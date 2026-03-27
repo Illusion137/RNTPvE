@@ -15,7 +15,10 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
     // MARK: - Properties
     
     /// The wrapper around AVPlayer with integrated equalizer support via MTAudioProcessingTap
-    private let avPlayerWrapper: AVPlayerWrapper
+    fileprivate var avPlayerWrapper: AVPlayerWrapper
+
+    var eqBandsSnapshot: [Float] = Array(repeating: 0, count: 10)
+    var eqEnabledSnapshot: Bool = true
     
     /// Convenient access to the wrapper
     var wrapper: AVPlayerWrapperProtocol {
@@ -148,32 +151,59 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
         self.remoteCommandController.audioPlayer = self
     }
 
+    func swapPrimaryWrapper(with newWrapper: AVPlayerWrapper) {
+        let oldWrapper = avPlayerWrapper
+        oldWrapper.delegate = nil
+        newWrapper.delegate = self
+        newWrapper.rate = oldWrapper.rate
+        newWrapper.timeEventFrequency = oldWrapper.timeEventFrequency
+        newWrapper.bufferDuration = oldWrapper.bufferDuration
+        newWrapper.automaticallyWaitsToMinimizeStalling = oldWrapper.automaticallyWaitsToMinimizeStalling
+        newWrapper.volume = oldWrapper.volume
+        newWrapper.isMuted = oldWrapper.isMuted
+        avPlayerWrapper = newWrapper
+        oldWrapper.stop()
+    }
+
+    func applyEqualizerSnapshot(to wrapper: AVPlayerWrapper) {
+        wrapper.setEqualizerBands(eqBandsSnapshot)
+        wrapper.setEqualizerEnabled(eqEnabledSnapshot)
+    }
+
     // MARK: - Player Actions
 
     public func load(item: AudioItem, playWhenReady: Bool? = nil) {
         handlePlayWhenReady(playWhenReady) {
-            currentItem = item
-
-            if automaticallyUpdateNowPlayingInfo {
-                nowPlayingInfoController.setWithoutUpdate(keyValues: [
-                    MediaItemProperty.duration(nil),
-                    NowPlayingInfoProperty.playbackRate(nil),
-                    NowPlayingInfoProperty.elapsedPlaybackTime(nil)
-                ])
-                loadNowPlayingMetaValues()
-            }
-            
-            enableRemoteCommands(forItem: item)
-            
-            wrapper.load(
-                from: item.getSourceUrl(),
-                type: item.getSourceType(),
-                playWhenReady: self.playWhenReady,
-                initialTime: (item as? InitialTiming)?.getInitialTime(),
-                options: (item as? AssetOptionsProviding)?.getAssetOptions(),
-                duration: item.getDuration()
-            )
+            self.load(item: item, into: self.avPlayerWrapper, updateContext: true, playWhenReady: self.playWhenReady)
         }
+    }
+
+    func updateCurrentItemContext(_ item: AudioItem?) {
+        currentItem = item
+        guard let item else { return }
+        if automaticallyUpdateNowPlayingInfo {
+            nowPlayingInfoController.setWithoutUpdate(keyValues: [
+                MediaItemProperty.duration(nil),
+                NowPlayingInfoProperty.playbackRate(nil),
+                NowPlayingInfoProperty.elapsedPlaybackTime(nil)
+            ])
+            loadNowPlayingMetaValues()
+        }
+        enableRemoteCommands(forItem: item)
+    }
+
+    func load(item: AudioItem, into targetWrapper: AVPlayerWrapper, updateContext: Bool, playWhenReady: Bool) {
+        if updateContext {
+            updateCurrentItemContext(item)
+        }
+        targetWrapper.load(
+            from: item.getSourceUrl(),
+            type: item.getSourceType(),
+            playWhenReady: playWhenReady,
+            initialTime: (item as? InitialTiming)?.getInitialTime(),
+            options: (item as? AssetOptionsProviding)?.getAssetOptions(),
+            duration: item.getDuration()
+        )
     }
 
     public func togglePlaying() {
@@ -385,7 +415,11 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
      - Note: Equalizer works with BOTH local files AND streaming URLs via MTAudioProcessingTap
      */
     public func setEqualizerBands(_ bands: [Float]) {
-        avPlayerWrapper.setEqualizerBands(bands)
+        var normalized = bands.map { max(-24, min(24, $0)) }
+        while normalized.count < 10 { normalized.append(0) }
+        if normalized.count > 10 { normalized = Array(normalized.prefix(10)) }
+        eqBandsSnapshot = normalized
+        avPlayerWrapper.setEqualizerBands(normalized)
     }
     
     /**
@@ -393,13 +427,14 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
      - returns: Array of gain values for each frequency band
      */
     public func getEqualizerBands() -> [Float] {
-        return avPlayerWrapper.getEqualizerBands()
+        return eqBandsSnapshot
     }
     
     /**
      Reset the equalizer to flat (all bands at 0 dB).
      */
     public func removeEqualizer() {
+        eqBandsSnapshot = Array(repeating: 0, count: 10)
         avPlayerWrapper.resetEqualizer()
     }
     
@@ -408,6 +443,7 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
      - parameter enabled: Whether to enable EQ processing
      */
     public func setEqualizerEnabled(_ enabled: Bool) {
+        eqEnabledSnapshot = enabled
         avPlayerWrapper.setEqualizerEnabled(enabled)
     }
     
@@ -416,7 +452,7 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
      - returns: True if EQ is enabled
      */
     public func isEqualizerActive() -> Bool {
-        return avPlayerWrapper.isEqualizerEnabled()
+        return eqEnabledSnapshot
     }
 
     public func updateSabrStreamPoToken(_ poToken: String) {

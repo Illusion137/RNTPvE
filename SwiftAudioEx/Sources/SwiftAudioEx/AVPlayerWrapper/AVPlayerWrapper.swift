@@ -23,6 +23,12 @@ public enum PlaybackEndedReason: String {
 class AVPlayerWrapper: AVPlayerWrapperProtocol {
     // MARK: - Properties
 
+    enum PlaybackBackend: Equatable {
+        case sabrStream
+        case localOpusFile
+        case defaultAVPlayer
+    }
+
     fileprivate var avPlayer = AVPlayer()
     private let playerObserver = AVPlayerObserver()
     internal let playerTimeObserver: AVPlayerTimeObserver
@@ -35,6 +41,8 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var urlOptions: [String: Any]? = nil
     private var sabrOpusPlayer: SabrOpusPlayer? = nil
     private var _lastExplicitVolume: Float = 1.0
+    private var _crossfadeVolume: Float = 1.0
+    private var _isMuted: Bool = false
     var onSabrRefreshPoToken: ((String) -> Void)? = nil
     var onSabrReloadPlayerResponse: ((String?) -> Void)? = nil
     /// Wall-clock time when the opus player started playing (adjusted for pauses).
@@ -197,31 +205,26 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     }
 
     var volume: Float {
-        get {
-            if let opus = sabrOpusPlayer { return opus.engine.mainMixerNode.outputVolume }
-            return avPlayer.volume
-        }
+        get { _lastExplicitVolume }
         set {
             _lastExplicitVolume = newValue
-            if let opus = sabrOpusPlayer {
-                DispatchQueue.main.async { opus.engine.mainMixerNode.outputVolume = newValue }
-            } else {
-                avPlayer.volume = newValue
-            }
+            applyOutputLevels()
         }
     }
 
     var isMuted: Bool {
-        get {
-            if let opus = sabrOpusPlayer { return opus.engine.mainMixerNode.outputVolume == 0 && _lastExplicitVolume > 0 }
-            return avPlayer.isMuted
-        }
+        get { _isMuted }
         set {
-            if let opus = sabrOpusPlayer {
-                DispatchQueue.main.async { opus.engine.mainMixerNode.outputVolume = newValue ? 0 : self._lastExplicitVolume }
-            } else {
-                avPlayer.isMuted = newValue
-            }
+            _isMuted = newValue
+            applyOutputLevels()
+        }
+    }
+
+    var crossfadeVolume: Float {
+        get { _crossfadeVolume }
+        set {
+            _crossfadeVolume = max(0, min(1, newValue))
+            applyOutputLevels()
         }
     }
 
@@ -290,7 +293,16 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 sabrOpusPlayer?.cancel()
                 sabrOpusPlayer = nil
                 state = .loading
-                loadSABR(startTimeMs: clamped * 1000)
+                let targetMs = clamped * 1000
+                let maxDurationMs: Double
+                if let passedDuration {
+                    maxDurationMs = max(0, passedDuration * 1000)
+                } else if duration > 0 {
+                    maxDurationMs = max(0, duration * 1000)
+                } else {
+                    maxDurationMs = targetMs
+                }
+                loadSABR(startTimeMs: max(0, min(targetMs, maxDurationMs)))
                 delegate?.AVWrapper(seekTo: Double(clamped), didFinish: true)
             }
             return
@@ -333,6 +345,23 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         self.delegate?.AVWrapper(failedWithError: error)
     }
 
+    private func effectiveOutputVolume() -> Float {
+        if _isMuted { return 0 }
+        return _lastExplicitVolume * _crossfadeVolume
+    }
+
+    private func applyOutputLevels() {
+        let output = effectiveOutputVolume()
+        if let opus = sabrOpusPlayer {
+            DispatchQueue.main.async {
+                opus.engine.mainMixerNode.outputVolume = output
+            }
+        } else {
+            avPlayer.volume = output
+            avPlayer.isMuted = _isMuted
+        }
+    }
+
     func load() {
         if (state == .failed) {
             recreateAVPlayer()
@@ -340,27 +369,18 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             clearCurrentItem()
         }
         if let url = url {
-            // SABR streaming (YouTube server-adaptive bitrate)
-            if urlOptions?["isSabr"] as? Bool == true {
+            switch AVPlayerWrapper.resolvePlaybackBackend(url: url, options: urlOptions) {
+            case .sabrStream:
                 loadSABR()
                 return
+            case .localOpusFile:
+                loadOpusFile(url: url)
+                return
+            case .defaultAVPlayer:
+                break
             }
 
-            // Local WebM/Opus files (AVPlayer doesn't support .webm natively).
-            // Detection priority: explicit flag → known extension → EBML magic bytes.
-            // Magic byte detection catches files saved with any extension (or none).
-            if url.isFileURL {
-                let isExplicit = urlOptions?["isOpus"] as? Bool == true
-                let ext = url.pathExtension.lowercased()
-                let knownExt = ["webm", "opus"].contains(ext)
-                if isExplicit || knownExt || AVPlayerWrapper.isWebMFile(url) {
-                    loadOpusFile(url: url)
-                    return
-                }
-            }
-
-            // AVURLAsset supporting streaming (HLS) and progressive download.
-            // The player will automatically detect the stream type.
+            // AVPlayer default path (normal URLs, HLS, and supported local files).
             let pendingAsset = AVURLAsset(url: url, options: urlOptions)
             asset = pendingAsset
             state = .loading
@@ -544,6 +564,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         let player = SabrOpusPlayer(stream: stream)
         sabrOpusPlayer = player
+        applyOutputLevels()
 
         player.onRefreshPoToken = { [weak self] reason in
             guard let self, self.sabrOpusPlayer === player else { return }
@@ -622,6 +643,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     private func loadOpusFile(url: URL) {
         let player = SabrOpusPlayer()
         sabrOpusPlayer = player
+        applyOutputLevels()
 
         let currentBands = audioTapProcessor.getEQBands()
         if currentBands.contains(where: { $0 != 0 }) { player.setEQBands(currentBands) }
@@ -689,6 +711,25 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                header[2] == 0xDF && header[3] == 0xA3
     }
 
+    static func resolvePlaybackBackend(url: URL, options: [String: Any]?) -> PlaybackBackend {
+        if options?["isSabr"] as? Bool == true {
+            return .sabrStream
+        }
+
+        if url.isFileURL {
+            let isExplicit = options?["isOpus"] as? Bool == true
+            let ext = url.pathExtension.lowercased()
+            let knownExt = ["webm", "opus"].contains(ext)
+            if isExplicit || knownExt || isWebMFile(url) {
+                return .localOpusFile
+            }
+        }
+
+        // Default AVPlayer path covers normal/progressive URLs, local AVFoundation
+        // file URLs (non-Opus/WebM), and HLS streams (including .m3u8 manifests).
+        return .defaultAVPlayer
+    }
+
     private func startOpusTimer() {
         guard Thread.isMainThread else {
             DispatchQueue.main.async { [weak self] in self?.startOpusTimer() }
@@ -749,6 +790,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
         avPlayer = AVPlayer();
         setupAVPlayer()
+        applyOutputLevels()
 
         delegate?.AVWrapperDidRecreateAVPlayer()
     }
@@ -791,6 +833,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         } else {
             avPlayer.rate = playWhenReady ? _rate : 0
         }
+        applyOutputLevels()
     }
 }
 

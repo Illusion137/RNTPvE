@@ -201,6 +201,7 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("stream error: \(error)")
+                guard self.pipelineGeneration == gen else { return }
                 onDidFailPlaying?()
             }
         }
@@ -259,6 +260,7 @@ class SabrOpusPlayer {
                 )
             } catch {
                 guard !Task.isCancelled else { return }
+                guard self.pipelineGeneration == gen else { return }
                 onDidFailPlaying?()
             }
         }
@@ -276,6 +278,7 @@ class SabrOpusPlayer {
             } catch {
                 guard !Task.isCancelled else { return }
                 log("file playback error: \(error)")
+                guard self.pipelineGeneration == gen else { return }
                 onDidFailPlaying?()
             }
         }
@@ -313,6 +316,7 @@ class SabrOpusPlayer {
         var proactiveFired = false
         var totalBytesReceived = 0
         var chunkIndex = 0
+        var consecutiveDecodeFailures = 0
 
         for try await chunk in audioStream {
             guard !Task.isCancelled else { break }
@@ -434,6 +438,7 @@ class SabrOpusPlayer {
                 if durationMs > 0 && packet.timestampMs >= durationMs {
                     log("gating Opus packet at \(packet.timestampMs)ms >= duration \(durationMs)ms")
                     gate = true
+                    consecutiveDecodeFailures = 0
                     break
                 }
 
@@ -449,9 +454,16 @@ class SabrOpusPlayer {
                     preSkipRemaining: &preSkipRemaining
                 ) else {
                     decodeFailed += 1
+                    consecutiveDecodeFailures += 1
+                    if consecutiveDecodeFailures >= 30 {
+                        log("T+\(elapsedMs())ms: aborting pipeline after \(consecutiveDecodeFailures) consecutive decode failures")
+                        gate = true
+                        break
+                    }
                     continue
                 }
 
+                consecutiveDecodeFailures = 0
                 chunkFrames.append(pcmBuf)
             }
 
@@ -463,7 +475,7 @@ class SabrOpusPlayer {
             // scheduleBuffer() calls, which otherwise overwhelms the CoreAudio render thread.
             if let coalesced = coalescePCM(chunkFrames, format: pcmFmt) {
                 playerNode.scheduleBuffer(coalesced, completionHandler: nil)
-            } else if !hasStartedPlaying && ci < 10 {
+            } else if !hasStartedPlaying {
                 log("T+\(elapsedMs())ms: chunk[\(ci)] coalescePCM returned nil (frames=\(chunkFrames.count))")
             }
 
@@ -492,11 +504,10 @@ class SabrOpusPlayer {
         // Ensure playback starts even if we reach end of stream before the first play() call
         if engineStarted && !hasStartedPlaying {
             log("T+\(elapsedMs())ms: WARNING — stream ended without starting playback, starting now")
-            if !playerNode.isPlaying { playerNode.play() }
-            hasStartedPlaying = true
             if pipelineGeneration == generation {
-                onDidStartPlaying?()
+                onDidFinishPlaying?()
             }
+            return
         }
 
         // Ensure the node is playing before scheduling the sentinel, so the

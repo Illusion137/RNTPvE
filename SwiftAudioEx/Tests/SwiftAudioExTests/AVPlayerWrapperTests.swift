@@ -211,6 +211,38 @@ class AVPlayerWrapperTests: XCTestCase {
         wrapper.timeEventFrequency = .everyHalfSecond
         XCTAssertEqual(wrapper.playerTimeObserver.periodicObserverTimeInterval, TimeEventFrequency.everyHalfSecond.getTime())
     }
+
+    func testResolvePlaybackBackendDefaultsToAVPlayerForNetworkUrl() {
+        let backend = AVPlayerWrapper.resolvePlaybackBackend(
+            url: URL(string: "https://example.com/audio.mp3")!,
+            options: nil
+        )
+        XCTAssertEqual(backend, .defaultAVPlayer)
+    }
+
+    func testResolvePlaybackBackendDefaultsToAVPlayerForHLSManifest() {
+        let backend = AVPlayerWrapper.resolvePlaybackBackend(
+            url: URL(string: "https://example.com/live/stream.m3u8")!,
+            options: nil
+        )
+        XCTAssertEqual(backend, .defaultAVPlayer)
+    }
+
+    func testResolvePlaybackBackendSelectsSabrWhenFlagged() {
+        let backend = AVPlayerWrapper.resolvePlaybackBackend(
+            url: URL(string: "https://example.com/sabr")!,
+            options: ["isSabr": true]
+        )
+        XCTAssertEqual(backend, .sabrStream)
+    }
+
+    func testResolvePlaybackBackendSelectsLocalOpusForExplicitFlag() {
+        let backend = AVPlayerWrapper.resolvePlaybackBackend(
+            url: Source.url,
+            options: ["isOpus": true]
+        )
+        XCTAssertEqual(backend, .localOpusFile)
+    }
 }
 
 class AVPlayerWrapperDelegateHolder: AVPlayerWrapperDelegate {

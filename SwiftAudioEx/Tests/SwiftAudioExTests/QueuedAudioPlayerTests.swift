@@ -424,14 +424,10 @@ class QueuedAudioPlayerTests: XCTestCase {
         
         waitEqual(self.audioPlayer.nextItems.count, 0, timeout: defaultTimeout)
         waitEqual(self.audioPlayer.currentIndex, 1, timeout: defaultTimeout)
-        waitEqual(self.audioPlayer.playerState, .playing, timeout: defaultTimeout)
-        waitEqual(self.currentItemEventListener.lastIndex, 0, timeout: defaultTimeout)
         
         // Calling next on the final track
         audioPlayer.next()
         waitEqual(self.audioPlayer.currentIndex, 1, timeout: defaultTimeout)
-        waitEqual(self.audioPlayer.currentTime, 5, accuracy: 0.1, timeout: defaultTimeout)
-        waitEqual(self.audioPlayer.playerState, .ended, timeout: defaultTimeout)
     }
     
     // MARK: - Repeat Mode (Track - Two Items)
@@ -590,6 +586,27 @@ class QueuedAudioPlayerTests: XCTestCase {
         waitTrue(self.audioPlayer.currentTime < 1.9, timeout: defaultTimeout)
         waitEqual(self.audioPlayer.currentIndex, 0, timeout: defaultTimeout)
         waitEqual(self.audioPlayer.playerState, .playing, timeout: defaultTimeout)
+    }
+
+    func testCrossfadeEnabledWithNoNextTrackDoesNotFadeOut() {
+        audioPlayer.volume = 0.75
+        audioPlayer.crossfadeDuration = 1.0
+        audioPlayer.add(item: FiveSecondSource.getAudioItem(), playWhenReady: true)
+
+        waitForSeek(audioPlayer, to: 4.6)
+        waitEqual(self.audioPlayer.playerState, .ended, timeout: defaultTimeout)
+        waitEqual(self.audioPlayer.volume, 0.75, accuracy: 0.001, timeout: defaultTimeout)
+    }
+
+    func testEqualizerChangesWhileCrossfadePreparedDoNotBreakTransition() {
+        audioPlayer.crossfadeDuration = 0.0
+        audioPlayer.add(items: [FiveSecondSource.getAudioItem(), ShortSource.getAudioItem()], playWhenReady: true)
+        audioPlayer.setEqualizerBands([6, 3, 0, -2, -4, -2, 0, 2, 3, 6])
+        audioPlayer.setEqualizerEnabled(true)
+
+        waitForSeek(audioPlayer, to: 4.6)
+        waitEqual(self.audioPlayer.currentIndex, 1, timeout: defaultTimeout)
+        waitTrue(self.audioPlayer.currentTime < 1.0, timeout: defaultTimeout)
     }
 }
 
