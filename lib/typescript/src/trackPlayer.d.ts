@@ -223,6 +223,12 @@ export declare function getRepeatMode(): Promise<RepeatMode>;
  */
 export declare function retry(): Promise<void>;
 /**
+ * Sets the crossfade duration for smooth transitions between tracks.
+ * Set to 0 to disable crossfade.
+ * @param seconds The crossfade duration in seconds (iOS only)
+ */
+export declare function setCrossFade(seconds: number): Promise<void>;
+/**
  * Sets the equalizer bands. Each value represents gain in decibels (typically -12 to +12).
  * @param bands Array of gain values for each frequency band (iOS only)
  */

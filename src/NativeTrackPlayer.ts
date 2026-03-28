@@ -26,6 +26,7 @@ export interface Spec extends TurboModule {
   setEqualizer(bands: number[]): Promise<void>;
   getEqualizer(): Promise<number[]>;
   removeEqualizer(): Promise<void>;
+  setCrossFade(seconds: number): Promise<void>;
 
   // playlist management
   add(

@@ -22,6 +22,7 @@ export interface Spec extends TurboModule {
     setEqualizer(bands: number[]): Promise<void>;
     getEqualizer(): Promise<number[]>;
     removeEqualizer(): Promise<void>;
+    setCrossFade(seconds: number): Promise<void>;
     add(tracks: UnsafeObject[], insertBeforeIndex?: number): Promise<number | void>;
     move(fromIndex: number, toIndex: number): Promise<void>;
     remove(indexes: number[]): Promise<void>;
