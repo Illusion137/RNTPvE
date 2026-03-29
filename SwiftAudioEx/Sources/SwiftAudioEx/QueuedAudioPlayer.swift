@@ -346,7 +346,11 @@ public class QueuedAudioPlayer: AudioPlayer, QueueManagerDelegate {
 
         promoted.crossfadeVolume = 1.0
         promoted.volume = crossfadeBaseVolume ?? wrapper.volume
-        promoted.playWhenReady = playWhenReady
+        // Always true: crossfade/preload only activates when playback is active.
+        // Reading `self.playWhenReady` here is unsafe because the primary wrapper's
+        // AVPlayer may have already reached end-of-track and set its own
+        // playWhenReady to false (via the timeControlStatus → .paused handler).
+        promoted.playWhenReady = true
 
         isPromotingSecondaryWrapper = true
         promotedWrapper = promoted
@@ -384,6 +388,25 @@ public class QueuedAudioPlayer: AudioPlayer, QueueManagerDelegate {
     }
 
     // MARK: - AVPlayerWrapperDelegate
+
+    override func AVWrapper(didChangeState state: AVPlayerWrapperState) {
+        // During crossfade the primary wrapper's AVPlayer will naturally reach the
+        // end of its track, causing timeControlStatus → .paused and state → .ended.
+        // Suppress these so the JS layer doesn't see a spurious pause/end during the fade.
+        if suppressPrimaryEndEvent {
+            return
+        }
+        super.AVWrapper(didChangeState: state)
+    }
+
+    override func AVWrapper(didChangePlayWhenReady playWhenReady: Bool) {
+        // Same as above: the primary wrapper may set playWhenReady = false when its
+        // AVPlayer finishes during crossfade.  Don't forward that to the JS layer.
+        if suppressPrimaryEndEvent {
+            return
+        }
+        super.AVWrapper(didChangePlayWhenReady: playWhenReady)
+    }
 
     override func AVWrapper(secondsElapsed seconds: Double) {
         super.AVWrapper(secondsElapsed: seconds)
@@ -438,8 +461,11 @@ public class QueuedAudioPlayer: AudioPlayer, QueueManagerDelegate {
             applyEqualizerSnapshot(to: promoted)
             promoted.volume = base
             promoted.crossfadeVolume = 1.0
-            promoted.playWhenReady = playWhenReady
+            promoted.playWhenReady = true
             updateCurrentItemContext(currentItem)
+            if automaticallyUpdateNowPlayingInfo {
+                updateNowPlayingPlaybackValues()
+            }
         } else if let currentItem = currentItem {
             cancelCrossfadeAndSecondary(resetPrimaryVolume: true)
             super.load(item: currentItem)
