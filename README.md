@@ -1,3 +1,7 @@
+# RNTPvE
+A `forkish` of react-native-track-player that has YouTube SABR playback and downloading support for iOS.
+An example of usage can be found in `https://github.com/Illusion137/lib-origin/tree/dev`;
+
 <img src="https:/rntp.dev/img/optimized-logo.svg" width="300" />
 
 [![downloads](https://img.shields.io/npm/dw/react-native-track-player.svg)](https://www.npmjs.com/package/react-native-track-player)

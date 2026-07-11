@@ -571,3 +571,14 @@ export async function updateSabrPoToken(
 ): Promise<void> {
   return TrackPlayer.updateSabrPoToken(outputPath, poToken);
 }
+
+/**
+ * Updates the PoToken of the currently active SABR playback stream.
+ * Call this from your `Event.SabrRefreshPoToken` handler (when the event carries no
+ * `outputPath`, i.e. it's for playback rather than a background download) after obtaining
+ * a fresh PoToken, or proactively as soon as the real PoToken is ready.
+ * @param poToken  The refreshed PoToken
+ */
+export async function updatePlaybackPoToken(poToken: string): Promise<void> {
+  return TrackPlayer.updatePlaybackPoToken(poToken);
+}

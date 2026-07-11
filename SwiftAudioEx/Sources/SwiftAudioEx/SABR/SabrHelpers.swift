@@ -250,10 +250,11 @@ private func patchMvhdDuration(_ data: inout Data, at mvhdOffset: Int, duration:
 private func mp4ReadBox(_ data: Data, at offset: Int) -> (String, Int)? {
     guard offset + 8 <= data.count else { return nil }
     let i = data.index(data.startIndex, offsetBy: offset)
-    let size = Int(UInt32(data[i]) << 24
-                 | UInt32(data[data.index(i, offsetBy: 1)]) << 16
-                 | UInt32(data[data.index(i, offsetBy: 2)]) << 8
-                 | UInt32(data[data.index(i, offsetBy: 3)]))
+    let b0: UInt32 = UInt32(data[i]) << 24
+    let b1: UInt32 = UInt32(data[data.index(i, offsetBy: 1)]) << 16
+    let b2: UInt32 = UInt32(data[data.index(i, offsetBy: 2)]) << 8
+    let b3: UInt32 = UInt32(data[data.index(i, offsetBy: 3)])
+    let size = Int(b0 | b1 | b2 | b3)
     guard size >= 8, offset + size <= data.count else { return nil }
     let typeBytes = data[data.index(data.startIndex, offsetBy: offset + 4)
                          ..<
