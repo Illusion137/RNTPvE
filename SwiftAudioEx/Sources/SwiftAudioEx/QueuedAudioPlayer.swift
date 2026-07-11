@@ -260,6 +260,9 @@ public class QueuedAudioPlayer: AudioPlayer, QueueManagerDelegate {
     private func prepareSecondaryWrapperIfNeeded(for index: Int) {
         guard index >= 0 && index < items.count else { return }
         if secondaryIndex == index, secondaryWrapper != nil { return }
+        // A metadata-first item has no source to preload yet; skip so the normal
+        // end-of-track advance loads it (and waits) on the primary wrapper instead.
+        if let pending = items[index] as? PendingSourceProviding, pending.isPendingSource { return }
 
         secondaryWrapper?.stop()
         secondaryWrapper = nil

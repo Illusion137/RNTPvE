@@ -210,6 +210,11 @@ export class PlaylistPlayer extends Player {
     console.warn('`updateMetadataForTrack` is currently unimplemented');
   }
 
+  // TODO
+  public updateTrackUrl(_index: number, _track: Partial<Track>) {
+    console.warn('`updateTrackUrl` is currently unimplemented');
+  }
+
   public updateNowPlayingMetadata(_metadata: Partial<Track>) {
     console.warn('`updateNowPlayingMetadata` is currently unimplemented');
   }

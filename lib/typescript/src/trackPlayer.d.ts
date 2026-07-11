@@ -101,6 +101,17 @@ export declare function updateOptions(options?: UpdateOptions): Promise<void>;
  */
 export declare function updateMetadataForTrack(trackIndex: number, metadata: TrackMetadataBase): Promise<void>;
 /**
+ * Supplies the playback source (url and related fields) for a track that was added
+ * without one (a metadata-first "pending" track). If the track is currently active,
+ * the player has been waiting in the loading state and starts loading the source
+ * immediately, preserving playWhenReady.
+ *
+ * @param trackIndex The index of the track whose source will be filled in.
+ * @param track The track fields to apply — at minimum `url`, plus any source-related
+ * fields (headers, userAgent, SABR params, updated duration, ...).
+ */
+export declare function updateTrackUrl(trackIndex: number, track: AddTrack): Promise<void>;
+/**
  * Updates the metadata content of the notification (Android) and the Now Playing Center (iOS)
  * without affecting the data stored for the current track.
  */

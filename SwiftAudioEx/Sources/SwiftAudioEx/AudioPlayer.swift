@@ -196,6 +196,12 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
         if updateContext {
             updateCurrentItemContext(item)
         }
+        // Metadata-first item: hold the wrapper in .loading until the real URL arrives
+        // (via reloadCurrentItemSource() once the item's source has been filled in).
+        if let pending = item as? PendingSourceProviding, pending.isPendingSource {
+            targetWrapper.prepareForPendingSource(playWhenReady: playWhenReady, duration: item.getDuration())
+            return
+        }
         targetWrapper.load(
             from: item.getSourceUrl(),
             type: item.getSourceType(),
@@ -204,6 +210,16 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
             options: (item as? AssetOptionsProviding)?.getAssetOptions(),
             duration: item.getDuration()
         )
+    }
+
+    /**
+     Re-loads the current item's source into the player, preserving `playWhenReady`.
+     Call this after a `PendingSourceProviding` item's URL has been filled in so playback
+     starts (or becomes ready) the moment the source is available.
+     */
+    public func reloadCurrentItemSource() {
+        guard let item = currentItem else { return }
+        load(item: item, into: avPlayerWrapper, updateContext: false, playWhenReady: playWhenReady)
     }
 
     public func togglePlaying() {

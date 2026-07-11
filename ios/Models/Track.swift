@@ -11,8 +11,10 @@ import MediaPlayer
 import AVFoundation
 import SwiftAudioEx
 
-class Track: AudioItem, TimePitching, AssetOptionsProviding {
-    let url: MediaURL
+class Track: AudioItem, TimePitching, AssetOptionsProviding, PendingSourceProviding {
+    // nil = metadata-first ("pending") track: it sits in the queue and, when active, holds the
+    // player in the loading state until updateSource() fills the URL in.
+    private(set) var url: MediaURL?
 
     @objc var title: String?
     @objc var artist: String?
@@ -22,7 +24,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     var genre: String?
     var duration: Double?
     var artworkURL: MediaURL?
-    let headers: [String: Any]?
+    private(set) var headers: [String: Any]?
     var userAgent: String?
     let pitchAlgorithm: String?
     var isLiveStream: Bool?
@@ -41,8 +43,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     private var originalObject: [String: Any] = [:]
 
     init?(dictionary: [String: Any]) {
-        guard let url = MediaURL(object: dictionary["url"]) else { return nil }
-        self.url = url
+        self.url = MediaURL(object: dictionary["url"])
         self.headers = dictionary["headers"] as? [String: Any]
         self.userAgent = dictionary["userAgent"] as? String
         self.pitchAlgorithm = dictionary["pitchAlgorithm"] as? String
@@ -63,6 +64,23 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         return originalObject
     }
 
+    /// Fills in (or replaces) the playback source of the track. Used to complete a
+    /// metadata-first track once its URL has been resolved.
+    func updateSource(dictionary: [String: Any]) {
+        if let newUrl = MediaURL(object: dictionary["url"]) {
+            self.url = newUrl
+        }
+        if let headers = dictionary["headers"] as? [String: Any] { self.headers = headers }
+        if let userAgent = dictionary["userAgent"] as? String { self.userAgent = userAgent }
+        if let isOpus = dictionary["isOpus"] as? Bool { self.isOpus = isOpus }
+        if let isSabr = dictionary["isSabr"] as? Bool { self.isSabr = isSabr }
+        if let sabrServerUrl = dictionary["sabrServerUrl"] as? String { self.sabrServerUrl = sabrServerUrl }
+        if let sabrUstreamerConfig = dictionary["sabrUstreamerConfig"] as? String { self.sabrUstreamerConfig = sabrUstreamerConfig }
+        if let sabrFormats = dictionary["sabrFormats"] as? [[String: Any]] { self.sabrFormats = sabrFormats }
+        if let poToken = dictionary["poToken"] as? String { self.poToken = poToken }
+        updateMetadata(dictionary: dictionary)
+    }
+
     func updateMetadata(dictionary: [String: Any]) {
         self.title = (dictionary["title"] as? String) ?? self.title
         self.artist = (dictionary["artist"] as? String) ?? self.artist
@@ -77,9 +95,16 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
         self.originalObject = self.originalObject.merging(dictionary) { (_, new) in new }
     }
 
+    // MARK: - PendingSourceProviding Protocol
+
+    var isPendingSource: Bool {
+        return url == nil
+    }
+
     // MARK: - AudioItem Protocol
 
     func getSourceUrl() -> String {
+        guard let url = url else { return "" }
         return url.isLocal ? url.value.path : url.value.absoluteString
     }
 
@@ -96,7 +121,7 @@ class Track: AudioItem, TimePitching, AssetOptionsProviding {
     }
 
     func getSourceType() -> SourceType {
-        return url.isLocal ? .file : .stream
+        return (url?.isLocal ?? false) ? .file : .stream
     }
 
     func getArtwork(_ handler: @escaping (UIImage?) -> Void) {

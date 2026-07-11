@@ -35,6 +35,14 @@ extension AudioItem {
     public func getDuration() -> Double? { nil }
 }
 
+/// Make your `AudioItem`-subclass conform to this protocol to support items whose source URL
+/// is not known yet ("metadata-first" items). While `isPendingSource` is true the player will
+/// hold the item in the `.loading` state instead of loading a source; once the real URL is set
+/// call `AudioPlayer.reloadCurrentItemSource()` to start playback.
+public protocol PendingSourceProviding {
+    var isPendingSource: Bool { get }
+}
+
 /// Make your `AudioItem`-subclass conform to this protocol to control which AVAudioTimePitchAlgorithm is used for each item.
 public protocol TimePitching {
     func getPitchAlgorithmType() -> AVAudioTimePitchAlgorithm

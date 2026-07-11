@@ -27,8 +27,13 @@ export interface Track extends TrackMetadataBase {
     poToken?: string;
     [key: string]: any;
 }
-export type AddTrack = Track & {
-    url: string | ResourceObject;
+export type AddTrack = Omit<Track, 'url'> & {
+    /**
+     * The playback source. May be omitted to add a metadata-first ("pending") track:
+     * the player keeps it in the queue and, when it becomes active, waits in the
+     * loading state until the url is supplied via `updateTrackUrl`.
+     */
+    url?: string | ResourceObject;
     artwork?: string | ResourceObject;
 };
 //# sourceMappingURL=Track.d.ts.map

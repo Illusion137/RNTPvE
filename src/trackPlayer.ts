@@ -231,6 +231,23 @@ export async function updateMetadataForTrack(
 }
 
 /**
+ * Supplies the playback source (url and related fields) for a track that was added
+ * without one (a metadata-first "pending" track). If the track is currently active,
+ * the player has been waiting in the loading state and starts loading the source
+ * immediately, preserving playWhenReady.
+ *
+ * @param trackIndex The index of the track whose source will be filled in.
+ * @param track The track fields to apply — at minimum `url`, plus any source-related
+ * fields (headers, userAgent, SABR params, updated duration, ...).
+ */
+export async function updateTrackUrl(
+  trackIndex: number,
+  track: AddTrack
+): Promise<void> {
+  return TrackPlayer.updateTrackUrl(trackIndex, resolveTrackAssets(track));
+}
+
+/**
  * Updates the metadata content of the notification (Android) and the Now Playing Center (iOS)
  * without affecting the data stored for the current track.
  */

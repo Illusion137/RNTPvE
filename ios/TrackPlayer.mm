@@ -173,6 +173,10 @@ RCT_EXPORT_MODULE()
   [nativeTrackPlayer updateMetadataFor:trackIndex metadata:metadata resolve:resolve reject:reject];
 }
 
+- (void)updateTrackUrl:(double)trackIndex track:(nonnull NSDictionary *)track resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
+  [nativeTrackPlayer updateTrackUrlFor:trackIndex trackDict:track resolve:resolve reject:reject];
+}
+
 - (void)updateNowPlayingMetadata:(nonnull NSDictionary *)metadata resolve:(nonnull RCTPromiseResolveBlock)resolve reject:(nonnull RCTPromiseRejectBlock)reject {
   [nativeTrackPlayer updateNowPlayingMetadataWithMetadata:metadata resolve:resolve reject:reject];
 }

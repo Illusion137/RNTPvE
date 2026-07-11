@@ -70,6 +70,7 @@ Not sure where to start?
 * **Background support** - Keep playing audio even after the app is in background
 * **Fully Customizable** - Even the notification icons are customizable!
 * **Supports React Hooks 🎣** - Includes React Hooks for common use-cases so you don't have to write them
+* **Metadata-first (pending) tracks (iOS)** - Add a track without a `url` and the player keeps it in the queue; when it becomes active it waits in the loading state until you supply the source via `TrackPlayer.updateTrackUrl(index, track)`, making skips instant even while the stream url is still being fetched
 
 ## Why another music module?
 After trying to team up modules like `react-native-sound`, `react-native-music-controls` and `react-native-google-cast`, I've noticed that their structure and the way they should be tied together can cause a lot of problems (mainly on Android). Those can heavily affect the app stability and user experience.

@@ -31,6 +31,7 @@ export interface Spec extends TurboModule {
     skipToNext(initialPosition?: number): Promise<void>;
     skipToPrevious(initialPosition?: number): Promise<void>;
     updateMetadataForTrack(trackIndex: number, metadata: UnsafeObject): Promise<void>;
+    updateTrackUrl(trackIndex: number, track: UnsafeObject): Promise<void>;
     updateNowPlayingMetadata(metadata: UnsafeObject): Promise<void>;
     setQueue(tracks: UnsafeObject[]): Promise<void>;
     getQueue(): Promise<UnsafeObject[]>;

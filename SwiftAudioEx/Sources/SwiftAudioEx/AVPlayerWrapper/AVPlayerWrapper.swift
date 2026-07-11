@@ -516,6 +516,28 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
     }
 
+    /// Puts the wrapper into a "waiting for source" state for an item whose URL is not known yet.
+    /// The wrapper reports `.loading` (so UIs show a spinner and the queue treats playback as
+    /// active) until a real source arrives via a subsequent `load(...)` call.
+    func prepareForPendingSource(playWhenReady: Bool, duration: Double? = nil) {
+        if (state == .failed) {
+            recreateAVPlayer()
+        } else {
+            clearCurrentItem()
+        }
+        playbackError = nil
+        url = nil
+        urlOptions = nil
+        asset = nil
+        item = nil
+        timeToSeekToAfterLoading = nil
+        // Report the expected duration while there is no AVPlayerItem to derive it from.
+        sourceType = .stream
+        passedDuration = duration
+        state = .loading
+        self.playWhenReady = playWhenReady
+    }
+
     func unload() {
         clearCurrentItem()
         self.sourceType = nil

@@ -26,6 +26,7 @@ export declare class PlaylistPlayer extends Player {
     removeUpcomingTracks(): Promise<void>;
     move(fromIndex: number, toIndex: number): Promise<void>;
     updateMetadataForTrack(_index: number, _metadata: Partial<Track>): void;
+    updateTrackUrl(_index: number, _track: Partial<Track>): void;
     updateNowPlayingMetadata(_metadata: Partial<Track>): void;
 }
 //# sourceMappingURL=PlaylistPlayer.d.ts.map

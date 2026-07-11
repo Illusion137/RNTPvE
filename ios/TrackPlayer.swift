@@ -677,6 +677,23 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
     }
 
     @objc
+    public func updateTrackUrl(for trackIndex: Int, trackDict: [String: Any], resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
+        if (rejectWhenNotInitialized(reject: reject)) { return }
+        if (rejectWhenTrackIndexOutOfBounds(index: trackIndex, reject: reject)) { return }
+
+        let track: Track = player.items[trackIndex] as! Track
+        track.updateSource(dictionary: trackDict)
+
+        // If the resolved track is the active one, the player has been holding in the
+        // loading state; kick off the real load now, preserving playWhenReady.
+        if (player.currentIndex == trackIndex) {
+            player.reloadCurrentItemSource()
+        }
+
+        resolve(NSNull())
+    }
+
+    @objc
     public func updateNowPlayingMetadata(metadata: [String: Any], resolve: RCTPromiseResolveBlock, reject: RCTPromiseRejectBlock) {
         if (rejectWhenNotInitialized(reject: reject)) { return }
 

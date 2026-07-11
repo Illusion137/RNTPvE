@@ -308,6 +308,11 @@ class MusicModule(reactContext: ReactApplicationContext) : NativeTrackPlayerSpec
         callback.resolve(null)
     }
 
+    override fun updateTrackUrl(index: Double, map: ReadableMap?, callback: Promise) = launchInScope {
+        // Metadata-first (pending source) tracks are an iOS-only feature for now.
+        callback.reject("unsupported", "updateTrackUrl is not implemented on Android")
+    }
+
     override fun updateMetadataForTrack(index: Double, map: ReadableMap?, callback: Promise) = launchInScope {
         if (verifyServiceBoundOrReject(callback)) return@launchInScope
 
