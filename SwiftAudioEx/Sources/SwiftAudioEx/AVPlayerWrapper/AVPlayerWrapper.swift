@@ -118,7 +118,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             applyAVPlayerRate()
 
             // Sync state for Opus path (avPlayer status changes are ignored for this path).
-            if sabrOpusPlayer != nil, opusPlayStartDate != nil, oldValue != playWhenReady {
+            // timeToSeekToAfterLoading != nil means a seek reload is in flight — stay in
+            // .loading; onDidStartPlaying will set the correct state and timer.
+            if sabrOpusPlayer != nil, opusPlayStartDate != nil, timeToSeekToAfterLoading == nil, oldValue != playWhenReady {
                 state = playWhenReady ? .playing : .paused
                 if playWhenReady { startOpusTimer() } else { stopOpusTimer() }
             }
@@ -275,8 +277,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             if opus.sabrStream == nil {
                 // File mode: restart pipeline from seek target
                 timeToSeekToAfterLoading = clamped
-                opusPlayStartDate = nil
-                opusPausedAt = nil
+                // Freeze the reported position at the seek target while the pipeline
+                // reloads — otherwise currentTime briefly reads 0 (scrubber snaps back,
+                // and a concurrent seek(by:) would compound off the wrong position).
+                opusPlayStartDate = Date().addingTimeInterval(-clamped)
+                opusPausedAt = Date()
                 stopOpusTimer()
                 state = .loading
                 opus.seek(to: clamped * 1000)
@@ -287,8 +292,9 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
                 // continues sending from where it left off. Restarting loadSABR() with
                 // startTimeMs tells the server to begin at the seek target via player_time_ms.
                 timeToSeekToAfterLoading = clamped
-                opusPlayStartDate = nil
-                opusPausedAt = nil
+                // Same freeze-at-target as file mode (see above).
+                opusPlayStartDate = Date().addingTimeInterval(-clamped)
+                opusPausedAt = Date()
                 stopOpusTimer()
                 sabrOpusPlayer?.cancel()
                 sabrOpusPlayer = nil
@@ -617,14 +623,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             self.state = self.playWhenReady ? .playing : .paused
             DispatchQueue.main.async {
                 guard self.sabrOpusPlayer === player else { return }
-                let ref = self.opusPausedAt ?? Date()
-                if let initialTime = self.timeToSeekToAfterLoading {
-                    self.timeToSeekToAfterLoading = nil
-                    self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
-                } else {
-                    self.opusPlayStartDate = ref
-                }
-                if self.playWhenReady { self.startOpusTimer() }
+                self.anchorOpusClock()
             }
         }
 
@@ -680,14 +679,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             // Timer and date tracking must be on main thread.
             DispatchQueue.main.async {
                 guard self.sabrOpusPlayer === player else { return }
-                let ref = self.opusPausedAt ?? Date()
-                if let initialTime = self.timeToSeekToAfterLoading {
-                    self.timeToSeekToAfterLoading = nil
-                    self.opusPlayStartDate = ref.addingTimeInterval(-initialTime)
-                } else {
-                    self.opusPlayStartDate = ref
-                }
-                if self.playWhenReady { self.startOpusTimer() }
+                self.anchorOpusClock()
             }
         }
         player.onDidFinishPlaying = { [weak self] in
@@ -750,6 +742,30 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         // Default AVPlayer path covers normal/progressive URLs, local AVFoundation
         // file URLs (non-Opus/WebM), and HLS streams (including .m3u8 manifests).
         return .defaultAVPlayer
+    }
+
+    /// (Re)anchors wall-clock position tracking once the opus pipeline reports audio flowing.
+    /// Handles loads that finish while paused (position stays frozen until resume) and
+    /// pending seeks. Must run on the main thread.
+    private func anchorOpusClock() {
+        let now = Date()
+        if let initialTime = timeToSeekToAfterLoading {
+            timeToSeekToAfterLoading = nil
+            opusPlayStartDate = now.addingTimeInterval(-initialTime)
+        } else if let pausedAt = opusPausedAt, let previousStart = opusPlayStartDate {
+            // Was frozen mid-track (paused before or during the load): keep the frozen
+            // position, re-anchored to now.
+            opusPlayStartDate = now.addingTimeInterval(-pausedAt.timeIntervalSince(previousStart))
+        } else {
+            opusPlayStartDate = now
+        }
+        if playWhenReady {
+            opusPausedAt = nil
+            startOpusTimer()
+        } else {
+            // Loaded while paused: freeze at the current position until resume.
+            opusPausedAt = now
+        }
     }
 
     private func startOpusTimer() {
@@ -849,6 +865,11 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
             } else {
                 if opusPlayer.playerNode.isPlaying {
                     opusPlayer.playerNode.pause()
+                }
+                // Freeze the wall-clock position even when the node isn't technically
+                // playing (still loading, engine stopped, underrun) — otherwise
+                // currentTime keeps advancing while the UI shows paused.
+                if opusPausedAt == nil {
                     opusPausedAt = Date()
                 }
             }
