@@ -57,8 +57,8 @@ export type EventPayloadByEvent = {
         token: string | null;
     };
     [Event.SabrRefreshPoToken]: {
-        outputPath: string;
-        reason: 'proactive' | 'expired';
+        outputPath?: string;
+        reason: 'placeholder_needed' | 'proactive' | 'expired';
     };
 };
 type Simplify<T> = {

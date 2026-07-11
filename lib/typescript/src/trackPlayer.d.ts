@@ -298,4 +298,12 @@ export declare function updateSabrStream(outputPath: string, serverUrl: string, 
  * @param poToken     The refreshed PoToken
  */
 export declare function updateSabrPoToken(outputPath: string, poToken: string): Promise<void>;
+/**
+ * Updates the PoToken of the currently active SABR playback stream.
+ * Call this from your `Event.SabrRefreshPoToken` handler (when the event carries no
+ * `outputPath`, i.e. it's for playback rather than a background download) after obtaining
+ * a fresh PoToken, or proactively as soon as the real PoToken is ready.
+ * @param poToken  The refreshed PoToken
+ */
+export declare function updatePlaybackPoToken(poToken: string): Promise<void>;
 //# sourceMappingURL=trackPlayer.d.ts.map
