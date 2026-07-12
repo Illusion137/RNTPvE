@@ -54,10 +54,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     fileprivate var passedDuration: TimeInterval?
     fileprivate var sourceType: SourceType?
 
-    fileprivate let stateQueue = DispatchQueue(
-        label: "AVPlayerWrapper.stateQueue",
-        attributes: .concurrent
-    )
+    fileprivate let stateLock = NSLock()
 
     // MARK: - Audio Processing (Equalizer)
 
@@ -85,22 +82,22 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     var _state: AVPlayerWrapperState = AVPlayerWrapperState.idle
     var state: AVPlayerWrapperState {
         get {
-            var state: AVPlayerWrapperState!
-            stateQueue.sync {
-                state = _state
-            }
-
-            return state
+            stateLock.lock()
+            defer { stateLock.unlock() }
+            return _state
         }
         set {
-            stateQueue.async(flags: .barrier) { [weak self] in
-                guard let self = self else { return }
-                let currentState = self._state
-                if (currentState != newValue) {
-                    self._state = newValue
-                    self.delegate?.AVWrapper(didChangeState: newValue)
-                }
-            }
+            stateLock.lock()
+            let changed = _state != newValue
+            if changed { _state = newValue }
+            stateLock.unlock()
+            // The delegate is invoked synchronously on the setting thread, OUTSIDE the lock.
+            // Do not move this onto a queue the getter waits for: a caller that holds the
+            // QueueManager lock (skip → onCurrentItemChanged → load → playWhenReady.didSet
+            // reads `state`) would deadlock against a delegate chain that reads
+            // `currentItem` (which takes the QueueManager lock). Keeping the call on the
+            // setting thread makes that re-entrant on the same recursive lock instead.
+            if changed { delegate?.AVWrapper(didChangeState: newValue) }
         }
     }
 
@@ -540,8 +537,10 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         // Report the expected duration while there is no AVPlayerItem to derive it from.
         sourceType = .stream
         passedDuration = duration
-        state = .loading
+        // Same ordering as load(from:): playWhenReady before the state change, so its
+        // didSet reads `state` before a fresh .loading transition is in flight.
         self.playWhenReady = playWhenReady
+        state = .loading
     }
 
     func unload() {
