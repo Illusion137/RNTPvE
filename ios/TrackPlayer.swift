@@ -985,6 +985,10 @@ public class NativeTrackPlayerImpl: NSObject, AudioSessionControllerDelegate {
         reject: RCTPromiseRejectBlock
     ) {
         if rejectWhenNotInitialized(reject: reject) { return }
+        // Persist the fresh token on the active track model too, so any later reload
+        // that rebuilds options from the track (reloadCurrentItemSource, jumping back
+        // to this queue entry) doesn't fall back to the stale/placeholder token.
+        (player.currentItem as? Track)?.poToken = poToken
         player.updateSabrStreamPoToken(poToken)
         resolve(NSNull())
     }

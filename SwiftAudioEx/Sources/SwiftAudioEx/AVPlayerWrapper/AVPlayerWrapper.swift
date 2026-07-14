@@ -367,17 +367,28 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
 
     func load() {
         if (state == .failed) {
+            // Preserve the source description across the AVPlayer recreation — a retry
+            // of a SABR/Opus item still needs the duration and source type
+            // (recreateAVPlayer clears both).
+            let preservedDuration = passedDuration
+            let preservedSourceType = sourceType
             recreateAVPlayer()
+            passedDuration = preservedDuration
+            sourceType = preservedSourceType
         } else {
             clearCurrentItem()
         }
         if let url = url {
             switch AVPlayerWrapper.resolvePlaybackBackend(url: url, options: urlOptions) {
             case .sabrStream:
-                loadSABR()
+                // Start directly at any pending seek target (left over from a failed
+                // seek reload, or a seek issued before the source loaded) instead of
+                // restarting the stream at 0. timeToSeekToAfterLoading stays set so
+                // anchorOpusClock() anchors the wall clock at the same position.
+                loadSABR(startTimeMs: (timeToSeekToAfterLoading ?? 0) * 1000)
                 return
             case .localOpusFile:
-                loadOpusFile(url: url)
+                loadOpusFile(url: url, startTimeMs: (timeToSeekToAfterLoading ?? 0) * 1000)
                 return
             case .defaultAVPlayer:
                 break
@@ -543,6 +554,13 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         state = .loading
     }
 
+    /// Drops any deferred seek target. Called when a different item is loaded into the
+    /// wrapper, so a seek issued against the previous item can't leak into the new one
+    /// (load() starts SABR/Opus pipelines at the pending target).
+    func abandonPendingSeek() {
+        timeToSeekToAfterLoading = nil
+    }
+
     func unload() {
         clearCurrentItem()
         self.sourceType = nil
@@ -553,11 +571,24 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
     func reload(startFromCurrentTime: Bool) {
         var time : Double? = nil
         if (startFromCurrentTime) {
-            if let currentItem = currentItem {
+            if sabrOpusPlayer != nil {
+                // Opus/SABR path: there is no AVPlayerItem; the wall clock holds the
+                // position (frozen at the seek target after a failed seek reload).
+                let current = currentTime
+                if current > 0, current.isFinite { time = current }
+            } else if let currentItem = currentItem {
                 if (!currentItem.duration.isIndefinite) {
                     time = currentItem.currentTime().seconds
                 }
             }
+        }
+        if sabrOpusPlayer != nil, let time = time {
+            // Route the resume position through the pending-seek slot so load() starts
+            // the new pipeline there directly — a post-load seek() would immediately
+            // tear the fresh pipeline down again.
+            timeToSeekToAfterLoading = time
+            load()
+            return
         }
         load()
         if let time = time {
@@ -660,7 +691,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         player.start(options: playbackOptions, durationMs: durationMs, startTimeMs: startTimeMs)
     }
 
-    private func loadOpusFile(url: URL) {
+    private func loadOpusFile(url: URL, startTimeMs: Double = 0) {
         let player = SabrOpusPlayer()
         sabrOpusPlayer = player
         applyOutputLevels()
@@ -708,7 +739,7 @@ class AVPlayerWrapper: AVPlayerWrapperProtocol {
         }
         let durationMs = (passedDuration ?? 0) * 1000
         player.prepareAudioSession()
-        player.startFile(url: url, durationMs: durationMs)
+        player.startFile(url: url, durationMs: durationMs, startTimeMs: startTimeMs)
     }
 
     // MARK: - Util
@@ -993,6 +1024,14 @@ extension AVPlayerWrapper {
     }
 
     func updateSabrStreamPoToken(_ poToken: String) {
+        // Keep the load-time options snapshot in sync: a seek on the SABR path tears the
+        // pipeline down and rebuilds it via loadSABR(), which re-reads urlOptions. Without
+        // this, every seek (and every failed-state reload) after a token refresh would
+        // resurrect the stale/placeholder token captured at load time and the rebuilt
+        // stream gets rejected by the server.
+        if urlOptions?["isSabr"] as? Bool == true {
+            urlOptions?["poToken"] = poToken
+        }
         sabrOpusPlayer?.updatePoToken(poToken)
     }
 

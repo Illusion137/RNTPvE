@@ -161,6 +161,11 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
         newWrapper.automaticallyWaitsToMinimizeStalling = oldWrapper.automaticallyWaitsToMinimizeStalling
         newWrapper.volume = oldWrapper.volume
         newWrapper.isMuted = oldWrapper.isMuted
+        // Carry the SABR callbacks over — they are per-wrapper, and losing them here
+        // would silently stop po-token refresh / reload-player-response events for
+        // every track played after a crossfade promotion.
+        newWrapper.onSabrRefreshPoToken = oldWrapper.onSabrRefreshPoToken
+        newWrapper.onSabrReloadPlayerResponse = oldWrapper.onSabrReloadPlayerResponse
         avPlayerWrapper = newWrapper
         oldWrapper.stop()
     }
@@ -194,6 +199,11 @@ public class AudioPlayer: AVPlayerWrapperDelegate {
 
     func load(item: AudioItem, into targetWrapper: AVPlayerWrapper, updateContext: Bool, playWhenReady: Bool) {
         if updateContext {
+            // Switching to a different item: a deferred seek issued against the
+            // previous item must not carry into this one. (Same-item reloads —
+            // reloadCurrentItemSource with updateContext: false — keep it so a scrub
+            // made while the source was still pending is honored.)
+            targetWrapper.abandonPendingSeek()
             updateCurrentItemContext(item)
         }
         // Metadata-first item: hold the wrapper in .loading until the real URL arrives

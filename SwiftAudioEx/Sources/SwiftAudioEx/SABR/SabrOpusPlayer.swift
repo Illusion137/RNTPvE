@@ -266,7 +266,7 @@ class SabrOpusPlayer {
         }
     }
 
-    func startFile(url: URL, durationMs: Double = 0) {
+    func startFile(url: URL, durationMs: Double = 0, startTimeMs: Double = 0) {
         currentFileURL = url
         currentFileDurationMs = durationMs
         pipelineGeneration += 1
@@ -274,7 +274,7 @@ class SabrOpusPlayer {
         streamTask = Task(priority: .userInitiated) { [weak self] in
             guard let self else { return }
             do {
-                try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs, generation: gen)
+                try await self.runPipeline(audioStream: makeFileStream(url: url), durationMs: durationMs, startTimeMs: startTimeMs, generation: gen)
             } catch {
                 guard !Task.isCancelled else { return }
                 log("file playback error: \(error)")
